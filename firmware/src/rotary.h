@@ -2,7 +2,7 @@
 
 class RotaryEncoder {
 public:
-  RotaryEncoder(uint8_t inputDT, uint8_t inputCLK, uint8_t inputSW);
+  RotaryEncoder(int inputDT, int inputCLK, int inputSW);
   // call this every loop to check for changes
   bool poll();
   // returns the current position
@@ -11,9 +11,10 @@ public:
   void reset();
 
 public:
-  uint inputDT;
-  uint inputCLK;
+  int inputDT;
+  int inputCLK;
   int inputSW;
   int position = 0;
   int lastStateCLK;
+  int lastStateDT;
 };

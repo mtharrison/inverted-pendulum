@@ -1,0 +1,12 @@
+syntax = "proto2";
+
+package inverted_pendulum;
+
+message RequestState {
+  required string message = 1;
+}
+
+message ResponseState {
+  required double angle = 1;
+  
+}
