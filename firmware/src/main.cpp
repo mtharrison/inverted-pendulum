@@ -1,28 +1,62 @@
-#include <Arduino.h>
-#include "ArduinoJson.h"
+#include "Arduino.h"
+#include "freeRTOS/task.h"
 
-uint8_t recv_index = 0x12;
-uint8_t send_index = 0x34;
+int x = 0;
+int dx_dt = 0;
+int theta = 0;
+int dtheta_dt = 0;
+int terminal = 0;
+int desired_x = 0;
 
-void setup() {
-    Serial.begin(115200);
+// Task: Communicate via serial
+void communicate(void* parameters) {
+  for (;;) { // infinite loop
 
-    
-    
-}
-
-void loop() {
-  while (Serial.available()) {
-    char buffer[100];
-    Serial.readBytesUntil('}', buffer, 100);
-    StaticJsonDocument<100> input;
-    deserializeJson(input, buffer);
-    int key = input["key"];
-    key *= 10;
-    input["key"] = key;
-
-    serializeJson(input, Serial);
   }
 }
 
-// x954
+// Task: Monitor the system and update states (x, dx_dt, theta, dtheta_dt, terminal)
+void monitor(void* parameters) {
+  for (;;) { // infinite loop
+
+  }
+}
+
+// Task: Act on the system based on actions
+// kill the task if the terminal state is reached
+void act(void* parameters) {
+  for (;;) { // infinite loop
+
+  }
+}
+
+void setup() {
+  xTaskCreate(
+    communicate,    // Function that should be called
+    "Communicate",  // Name of the task (for debugging)
+    1000,           // Stack size (bytes)
+    NULL,           // Parameter to pass
+    1,              // Task priority
+    NULL            // Task handle
+  );
+
+  xTaskCreate(
+    monitor,        // Function that should be called
+    "Monitor",      // Name of the task (for debugging)
+    1000,           // Stack size (bytes)
+    NULL,           // Parameter to pass
+    1,              // Task priority
+    NULL            // Task handle
+  );
+
+  xTaskCreate(
+    act,            // Function that should be called
+    "act",          // Name of the task (for debugging)
+    1000,           // Stack size (bytes)
+    NULL,           // Parameter to pass
+    1,              // Task priority
+    NULL            // Task handle
+  );
+}
+
+void loop() {}
