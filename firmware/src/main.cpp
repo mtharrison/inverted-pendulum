@@ -3,17 +3,18 @@
 #include <ESP32Encoder.h>
 #include "freeRTOS/task.h"
 #include "string.h"
+#include "limit.h"
 
-#define PI 3.14159265358979323846
 #define SERIAL_BUFFER_SIZE 100
 
 #define REQ_TYPE_OBSERVE 0
 
 int x = 0;
-float speed = 0;
-int theta = 0;
-float angular_velocity = 0;
-int terminal = 0;
+double speed = 0;
+double theta = 0;
+double angular_velocity = 0;
+int terminal_limitL = 0;
+int terminal_limitR = 0;
 
 // Task: Respond to requests over serial
 void communicate(void* parameters) {
@@ -35,7 +36,8 @@ void communicate(void* parameters) {
         response.add(speed);
         response.add(theta);
         response.add(angular_velocity);
-        response.add(terminal);
+        response.add(terminal_limitL);
+        response.add(terminal_limitR);
       }
       else {
         response.add(STATUS::FAIL);
@@ -48,28 +50,71 @@ void communicate(void* parameters) {
     vTaskDelay(1 / portTICK_PERIOD_MS);
   }
 }
+
 // Task: Monitor the system and update state
 void monitor(void* parameters) {
   ESP32Encoder encoder;
   encoder.attachFullQuad(13, 14);
 
+  LimitSwitch limitL = LimitSwitch(1, 12);
+  LimitSwitch limitR = LimitSwitch(2, 10);
+
   int64_t time_us = esp_timer_get_time();
+  float filtered_velocity = 0.0; // For low-pass filter
+  const float alpha = 0.1; // Smoothing factor (adjust as needed)
 
   for (;;) {
+    terminal_limitL = limitL.triggered();
+    terminal_limitR = limitR.triggered();
+
     int64_t prevTime_us = time_us;
-    int prev_theta = theta;
+    float prev_theta = theta;
 
     int encoderRaw = encoder.getCount();
     time_us = esp_timer_get_time();
     int64_t dt = time_us - prevTime_us;
-    theta = (encoderRaw / 2400) * 2 * PI;
-    if (dt > 0) {
-      angular_velocity = (theta - prev_theta) / dt;
+
+    theta = ((float)encoderRaw / 2400.0) * 2.0 * PI;
+    
+    // Convert dt to seconds and calculate velocity
+    if (dt > 0) { // Avoid division by zero
+      float angular_velocity = (theta - prev_theta) / ((float)dt / 1e6);
+      // Apply low-pass filter
+      filtered_velocity = alpha * angular_velocity + (1 - alpha) * filtered_velocity;
     }
 
-    vTaskDelay(1 / portTICK_PERIOD_MS);
+    // Use 'filtered_velocity' for smooth output
+    angular_velocity = filtered_velocity;
+
+    vTaskDelay(pdMS_TO_TICKS(1)); // Sample every 10ms for better velocity averaging
   }
 }
+
+// // Task: Monitor the system and update state
+// void monitor(void* parameters) {
+//   ESP32Encoder encoder;
+//   encoder.attachFullQuad(13, 14);
+
+//   int64_t time_us = esp_timer_get_time();
+
+//   for (;;) {
+//     int64_t prevTime_us = time_us;
+//     float prev_theta = theta;
+
+//     int encoderRaw = encoder.getCount();
+//     time_us = esp_timer_get_time();
+//     int64_t dt = time_us - prevTime_us;
+
+//     theta = ((float)encoderRaw / 2400.0) * 2.0 * PI;
+    
+//     // Convert dt to seconds and calculate velocity
+//     if (dt > 0) { // Avoid division by zero
+//       angular_velocity = (theta - prev_theta) / ((float)dt / 1e6);
+//     }
+
+//     vTaskDelay(pdMS_TO_TICKS(10)); // Sample every 10ms for better velocity averaging
+//   }
+// }
 
 // Task: Act on the system based on actions
 // kill the task if the terminal state is reached
