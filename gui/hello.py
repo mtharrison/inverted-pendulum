@@ -4,7 +4,7 @@ import msgpack
 import time
 import json
 i = 0
-with serial.Serial('/dev/cu.usbmodem2101', 115200, timeout=10) as ser:
+with serial.Serial('/dev/cu.usbmodem2101', 115200, timeout=3) as ser:
     while True:
         # i += 1
         
@@ -14,13 +14,17 @@ with serial.Serial('/dev/cu.usbmodem2101', 115200, timeout=10) as ser:
         #     out += ser.read(100)
 
         before = time.perf_counter()
-        ser.write(json.dumps({'command': 'respond', 'key': i}).encode())
+        ser.write(json.dumps([i, "observe"]).encode())
         i+=1
 
-        out = ser.read_until(b'}')
+        out = ser.readline()
         if (len(out)):
             after = time.perf_counter()
-            print("got", out, after - before)
+            print("got", out.decode('utf-8'), after - before)
         # unpacker = msgpack.Unpacker(ser)
         # for unpacked in unpacker:
         #     # print(unpacked)
+
+
+        time.sleep(1/30)
+

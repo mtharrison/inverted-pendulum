@@ -9,6 +9,7 @@ dependencies = [
     "msgpack>=1.1.0",
     "protobuf>=5.29.3",
     "protobug>=0.2.0",
+    "pygame>=2.6.1",
     "pyqt6>=6.8.0",
     "pyserial>=3.5",
     "pystream>=0.1",
