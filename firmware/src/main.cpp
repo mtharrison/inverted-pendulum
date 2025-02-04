@@ -1,170 +1,185 @@
 #include "Arduino.h"
-#include "ArduinoJson.h"
-
+#include <ArduinoJson.h>
 #include <AccelStepper.h>
 #include <ESP32Encoder.h>
-#include "freeRTOS/task.h"
-#include "string.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "limit.h"
 
-
-#define SERIAL_BUFFER_SIZE 100
+// Configuration
+#define SERIAL_BUFFER_SIZE 256
 #define MICROSTEPS 1600
 #define MOTOR_ENABLE 18
-#define REQ_TYPE_OBSERVE 0
-#define REQ_TYPE_STEP 1
+#define STEP_PIN 16
+#define DIR_PIN 7
+#define ENCODER_PIN_A 13
+#define ENCODER_PIN_B 14
+#define LIMIT_L_PIN 12
+#define LIMIT_R_PIN 10
 
-int current_position = 0;
-int target_position = 0;
-double speed = 0;
-double theta = 0;
-double angular_velocity = 0;
-int terminal_limitL = 0;
-int terminal_limitR = 0;
+// Shared data protection
+SemaphoreHandle_t dataMutex = xSemaphoreCreateMutex();
 
-// Task: Respond to requests over serial
+// Motor control structure
+struct PendulumState {
+    int32_t current_position = 0;
+    int32_t target_position = 0;
+    double theta = 0;
+    double angular_velocity = 0;
+    bool limitL = false;
+    bool limitR = false;
+    bool enabled = true;
+};
+
+enum class RequestType : uint8_t {
+    Observe = 0, 
+    Step = 1
+};
+
+PendulumState motorState;
+
 void communicate(void* parameters) {
-  for (;;) {
-    if (Serial.available()) {
-      JsonDocument request;
-      char buffer[SERIAL_BUFFER_SIZE];
-      String received = Serial.readStringUntil('\n');
-      deserializeJson(request, buffer);
+    JsonDocument request;
+    char buffer[SERIAL_BUFFER_SIZE];
 
-      int id = request[0];
-      int reqType = request[1];
+    for (;;) {
+        if (Serial.available()) {
+            size_t len = Serial.readBytesUntil('\n', buffer, SERIAL_BUFFER_SIZE-1);
+            buffer[len] = '\0';
 
-      JsonDocument response;
-      response.add(id);
-      if (reqType == REQ_TYPE_OBSERVE) {
-        response.add(STATUS::OK);
-        response.add(current_position);
-        response.add(speed);
-        response.add(theta);
-        response.add(angular_velocity);
-        response.add(terminal_limitL);
-        response.add(terminal_limitR);
-        response.add(target_position);
-      }
-      else if (reqType == REQ_TYPE_STEP)
-      {
-        int step = request[2];
-        Serial.println(step);
-        target_position += step;
 
-        response.add(STATUS::OK);
-        response.add(current_position);
-        response.add(speed);
-        response.add(theta);
-        response.add(angular_velocity);
-        response.add(terminal_limitL);
-        response.add(terminal_limitR);
-        response.add(target_position);
-      }
-      else {
-        response.add(STATUS::FAIL);
-        response.add(String("Unknown request type"));
-      }
+            DeserializationError error = deserializeJson(request, buffer);
+            if (error) {
+                Serial.print("{\"error\":\"");
+                Serial.print(error.c_str());
+                Serial.println("\"}");
+                continue;
+            }
 
-      serializeJson(response, Serial);
+            JsonDocument response;
+            int id = request[0];
+            auto reqType = static_cast<RequestType>(request["type"].as<uint8_t>());
+
+            response["id"] = id;
+            
+            if (reqType == RequestType::Observe) {
+                xSemaphoreTake(dataMutex, portMAX_DELAY);
+                response["status"] = "OK";
+                response["position"] = motorState.current_position;
+                response["theta"] = motorState.theta;
+                response["angular_velocity"] = motorState.angular_velocity;
+                response["limitL"] = motorState.limitL;
+                response["limitR"] = motorState.limitR;
+                response["target"] = motorState.target_position;
+                response["enabled"] = motorState.enabled;
+                xSemaphoreGive(dataMutex);
+            }
+            else if (reqType == RequestType::Step) {
+                int step = request[2];
+                xSemaphoreTake(dataMutex, portMAX_DELAY);
+                if (motorState.enabled) {
+                    motorState.target_position += step;
+                }
+                response["status"] = motorState.enabled ? "OK" : "DISABLED";
+                response["position"] = motorState.current_position;
+                response["theta"] = motorState.theta;
+                response["angular_velocity"] = motorState.angular_velocity;
+                response["limitL"] = motorState.limitL;
+                response["limitR"] = motorState.limitR;
+                response["target"] = motorState.target_position;
+                response["enabled"] = motorState.enabled;
+                xSemaphoreGive(dataMutex);
+            }
+            else {
+                response["status"] = "ERROR";
+                response["message"] = "Invalid request type";
+            }
+
+            serializeJson(response, Serial);
+            Serial.println();
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
-
-    vTaskDelay(pdMS_TO_TICKS(1));
-  }
 }
 
-// Task: Monitor the system and update state
 void monitor(void* parameters) {
-  ESP32Encoder encoder;
-  encoder.attachFullQuad(13, 14);
-  pinMode(MOTOR_ENABLE, OUTPUT);
+    ESP32Encoder encoder;
+    encoder.attachFullQuad(ENCODER_PIN_A, ENCODER_PIN_B);
+    LimitSwitch limitL(LIMIT_L_PIN);
+    LimitSwitch limitR(LIMIT_R_PIN);
 
-  LimitSwitch limitL = LimitSwitch(1, 12);
-  LimitSwitch limitR = LimitSwitch(2, 10);
+    const float alpha = 0.1;
+    float filtered_velocity = 0;
+    int64_t lastTime = esp_timer_get_time();
 
-  int64_t time_us = esp_timer_get_time();
-  float filtered_velocity = 0.0; // For low-pass filter
-  const float alpha = 0.1; // Smoothing factor (adjust as needed)
+    for (;;) {
+        bool limitStateL = limitL.triggered();
+        bool limitStateR = limitR.triggered();
 
-  for (;;) {
-    terminal_limitL = limitL.triggered();
-    terminal_limitR = limitR.triggered();
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
+        motorState.limitL = limitStateL;
+        motorState.limitR = limitStateR;
+        
+        if (limitStateL || limitStateR) {
+            motorState.enabled = false;
+            digitalWrite(MOTOR_ENABLE, LOW); // Active LOW enable
+        }
+        xSemaphoreGive(dataMutex);
 
-    if (terminal_limitL || terminal_limitR) {
-      digitalWrite(MOTOR_ENABLE, LOW);
+        // Update position and velocity
+        int64_t now = esp_timer_get_time();
+        float dt = (now - lastTime) / 1e6;
+        lastTime = now;
+
+        int32_t encoderCount = encoder.getCount();
+        float newTheta = (encoderCount / 2400.0) * 2 * PI;
+        
+        if (dt > 0) {
+            float velocity = (newTheta - motorState.theta) / dt;
+            filtered_velocity = alpha * velocity + (1 - alpha) * filtered_velocity;
+        }
+
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
+        motorState.theta = newTheta;
+        motorState.angular_velocity = filtered_velocity;
+        xSemaphoreGive(dataMutex);
+
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
-
-    int64_t prevTime_us = time_us;
-    float prev_theta = theta;
-
-    int encoderRaw = encoder.getCount();
-    time_us = esp_timer_get_time();
-    int64_t dt = time_us - prevTime_us;
-
-    theta = ((float)encoderRaw / 2400.0) * 2.0 * PI;
-    
-    // Convert dt to seconds and calculate velocity
-    if (dt > 0) { // Avoid division by zero
-      float angular_velocity = (theta - prev_theta) / ((float)dt / 1e6);
-      // Apply low-pass filter
-      filtered_velocity = alpha * angular_velocity + (1 - alpha) * filtered_velocity;
-    }
-
-    // Use 'filtered_velocity' for smooth output
-    angular_velocity = filtered_velocity;
-
-    vTaskDelay(pdMS_TO_TICKS(1));
-  }
 }
 
-// Task: Act on the system based on actions
-// kill the task if the terminal state is reached
 void act(void* parameters) {
-  AccelStepper stepper(AccelStepper::DRIVER, 16, 7);
-  stepper.setMaxSpeed(100000);
-  stepper.setAcceleration(10000);
-  digitalWrite(MOTOR_ENABLE, HIGH);
+    AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
+    stepper.setMaxSpeed(100000);
+    stepper.setAcceleration(10000);
+    pinMode(MOTOR_ENABLE, OUTPUT);
 
-  for (;;) {
-    stepper.moveTo(target_position * 100);
-    current_position = stepper.currentPosition();
-    stepper.run();
-    vTaskDelay(pdMS_TO_TICKS(0.1));
-  }
+    for (;;) {
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
+        bool enabled = motorState.enabled;
+        int32_t target = motorState.target_position;
+        xSemaphoreGive(dataMutex);
+
+        digitalWrite(MOTOR_ENABLE, enabled ? LOW : HIGH);
+        
+        if (enabled) {
+            stepper.moveTo(target);
+            stepper.run();
+            
+            xSemaphoreTake(dataMutex, portMAX_DELAY);
+            motorState.current_position = stepper.currentPosition();
+            xSemaphoreGive(dataMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
 }
 
 void setup() {
-  Serial.begin(115200);
-
-  xTaskCreatePinnedToCore(
-    communicate,    // Function that should be called
-    "Communicate",  // Name of the task (for debugging)
-    5000,           // Stack size (bytes)
-    NULL,           // Parameter to pass
-    3,              // Task priority
-    NULL,            // Task handle
-    1
-  );
-
-  xTaskCreatePinnedToCore(
-    monitor,        // Function that should be called
-    "Monitor",      // Name of the task (for debugging)
-    5000,           // Stack size (bytes)
-    NULL,           // Parameter to pass
-    3,              // Task priority
-    NULL, 1            // Task handle
-  );
-
-  xTaskCreatePinnedToCore(
-    act,            // Function that should be called
-    "act",          // Name of the task (for debugging)
-    5000,           // Stack size (bytes)
-    NULL,           // Parameter to pass
-    3,              // Task priority
-    NULL, 1            // Task handle
-  );
+    Serial.begin(115200);
+    xTaskCreatePinnedToCore(communicate, "Communicate", 4096, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(monitor, "Monitor", 4096, NULL, 4, NULL, 1);
+    xTaskCreatePinnedToCore(act, "Act", 4096, NULL, 3, NULL, 1);
 }
 
-void loop() {
-  vTaskDelete(NULL);
-}
+void loop() { vTaskDelete(NULL); }

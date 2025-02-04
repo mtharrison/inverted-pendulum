@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "limit.h"
 
-LimitSwitch::LimitSwitch(int id, int pin) : id(id), pin(pin) {
+LimitSwitch::LimitSwitch(int pin) : pin(pin) {
   pinMode(pin, INPUT_PULLUP);
 }
 
