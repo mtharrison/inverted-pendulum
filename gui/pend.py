@@ -137,22 +137,45 @@ def draw_chart(angle, angular_velocity):
 if __name__ == "__main__":
     clock = pygame.time.Clock()
     running = True
-    
-    with serial.Serial('/dev/cu.usbmodem2101', 115200, timeout=3) as ser:
+    prev_time = time.time()
+    pygame.key.set_repeat(50, 1)
+    with serial.Serial('/dev/cu.usbmodem2101', 115200, timeout=0.1) as ser:
         while running:
-            ser.write(json.dumps([i, 0]).encode())
-            out = ser.read_until(b']')
-            parsed = json.loads(out) 
-            print(parsed)
-            angle = parsed[4]  # a continous angle
-            angular_velocity = parsed[5]
-            limitL = parsed[6]
-            limitR = parsed[7]
+            t = time.time()
+            if (t - prev_time > 16/1000):
+                ser.write((json.dumps([i, 0]) + '\n').encode())
+                out = ser.read_until(b']')
+                print(out)
+                try:
+                    parsed = json.loads(out) 
+                    angle = parsed[4]  # a continous angle
+                    angular_velocity = parsed[5]
+                    limitL = parsed[6]
+                    limitR = parsed[7]
 
-            # Update display and check if window was closed
-            if not render(angle, angular_velocity, limitL, limitR):
-                running = False
+                    # Update display and check if window was closed
+                    if not render(angle, angular_velocity, limitL, limitR):
+                        running = False
+                except:
+                    pass
+                prev_time = time.time()
 
-            clock.tick(30)
+                
+
+            events = pygame.event.get()
+            for event in events:
+                if event.type == pygame.KEYDOWN:
+                    move = 0
+                    if event.key == pygame.K_LEFT:
+                        move = -1
+                    if event.key == pygame.K_RIGHT:
+                        move = 1
+
+                    ser.write((json.dumps([i, 1, move]) + '\n').encode())
+                    print('writing', move)
+
+                    ser.write((json.dumps([i, 0]) + '\n').encode())
+                    out = ser.read_until(b']')
+                    print(out)
 
     pygame.quit()
