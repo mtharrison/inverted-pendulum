@@ -4,64 +4,78 @@
 #include "freeRTOS/task.h"
 #include "string.h"
 
+#define PI 3.14159265358979323846
+#define SERIAL_BUFFER_SIZE 100
+
+#define REQ_TYPE_OBSERVE 0
+
 int x = 0;
-int dx_dt = 0;
+float speed = 0;
 int theta = 0;
-int dtheta_dt = 0;
+float angular_velocity = 0;
 int terminal = 0;
-int desired_x = 0;
 
 // Task: Respond to requests over serial
 void communicate(void* parameters) {
-  for (;;) { 
+  for (;;) {
     if (Serial.available()) {
       JsonDocument request;
-      char buffer[100];
-      Serial.readBytesUntil(']', buffer, 100);
+      char buffer[SERIAL_BUFFER_SIZE];
+      Serial.readBytesUntil(']', buffer, SERIAL_BUFFER_SIZE);
       deserializeJson(request, buffer);
-      
+
       int id = request[0];
-      const char* reqType = request[1];
+      int reqType = request[1];
 
       JsonDocument response;
       response.add(id);
-      if (strcmp(reqType, "observe") == 0) {
-        response.add(1);           // STATUS 
-        response.add(x);           // X
-        response.add(dx_dt);       // dX
-        response.add(theta);       // theta
-        response.add(dtheta_dt);   // dtheta
-        response.add(terminal);    // terminal
+      if (reqType == REQ_TYPE_OBSERVE) {
+        response.add(STATUS::OK);
+        response.add(x);
+        response.add(speed);
+        response.add(theta);
+        response.add(angular_velocity);
+        response.add(terminal);
       }
       else {
-        response.add(0);
+        response.add(STATUS::FAIL);
         response.add(String("Unknown request type"));
       }
 
       serializeJson(response, Serial);
     }
-    
+
     vTaskDelay(1 / portTICK_PERIOD_MS);
   }
 }
-
-// Task: Monitor the system and update states (x, dx_dt, theta, dtheta_dt, terminal)
+// Task: Monitor the system and update state
 void monitor(void* parameters) {
   ESP32Encoder encoder;
   encoder.attachFullQuad(13, 14);
 
-  for (;;) { 
-    int count = encoder.getCount() % 2400;
-    theta = count;
-    vTaskDelay(3 / portTICK_PERIOD_MS);
+  int64_t time_us = esp_timer_get_time();
+
+  for (;;) {
+    int64_t prevTime_us = time_us;
+    int prev_theta = theta;
+
+    int encoderRaw = encoder.getCount();
+    time_us = esp_timer_get_time();
+    int64_t dt = time_us - prevTime_us;
+    theta = (encoderRaw / 2400) * 2 * PI;
+    if (dt > 0) {
+      angular_velocity = (theta - prev_theta) / dt;
+    }
+
+    vTaskDelay(1 / portTICK_PERIOD_MS);
   }
 }
 
 // Task: Act on the system based on actions
 // kill the task if the terminal state is reached
 void act(void* parameters) {
-  for (;;) { 
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+  for (;;) {
+    vTaskDelay(1 / portTICK_PERIOD_MS);
   }
 }
 
