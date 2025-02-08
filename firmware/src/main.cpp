@@ -26,35 +26,56 @@ const char* password = "1gxFtvUHC6xi";
 #define LIMIT_L_PIN 12
 #define LIMIT_R_PIN 10
 
+#define MAX_SPEED 100000
+#define MAX_ACCEL 10000 * 10
+#define SAFE_SPEED 1000
+
 // Shared data protection
 SemaphoreHandle_t dataMutex = xSemaphoreCreateMutex();
 
 // Motor control structure
+// shared global state of the system
 struct PendulumState {
-    int32_t current_position = 0;
+    // current position of the cart
+    int32_t current_position = 0;  
+    // target position of the cart 
     int32_t target_position = 0;
+    // current angle of the pendulum
     double theta = 0;
+    // current angular velocity of the pendulum
     double angular_velocity = 0;
+    // whether the left limit switch is triggered
     bool limitL = false;
+    // whether the right limit switch is triggered
     bool limitR = false;
+    // whether the motor is enabled
     bool enabled = true;
+    // whether the system needs to be reset
     bool needs_reset = false;
 };
 
+// Request types that can be received over serial
 enum class RequestType : int {
     Observe = 0, 
     Step = 1,
     Reset = 2
 };
 
+// Global state of the system
 PendulumState motorState;
 
-void send_debug_message(const char* message) {
-    Serial.print("{\"status\":\"DEBUG\",\"message\":\"");
-    Serial.print(message);
-    Serial.println("\"}");
+// Send a debug message over serial
+void DEBUG(const char* message, ...) {
+    va_list args;
+    va_start(args, message);
+    char buffer[256];
+    vsnprintf(buffer, 256, message, args);
+    va_end(args);
+    Serial.println(buffer);
 }
 
+// This task is responsible for receiving commands from the serial port
+// and sending back the current state of the system
 void communicate(void* parameters) {
     JsonDocument request;
     char buffer[SERIAL_BUFFER_SIZE];
@@ -66,16 +87,13 @@ void communicate(void* parameters) {
 
             DeserializationError error = deserializeJson(request, buffer);
             if (error) {
-                Serial.print("{\"error\":\"");
-                Serial.print(error.c_str());
-                Serial.println("\"}");
+                DEBUG("Failed to parse JSON: %s", error.c_str());
                 continue;
             }
-                    
+
             JsonDocument response;
             int id = request[0];
             auto reqType = static_cast<RequestType>(request[1].as<int>());
-
             response["id"] = id;
             
             if (reqType == RequestType::Observe) {
@@ -96,6 +114,7 @@ void communicate(void* parameters) {
                 if (motorState.enabled) {
                     motorState.target_position += step;
                 }
+                DEBUG("Target position set to: %d", motorState.target_position);
                 response["status"] = motorState.enabled ? "OK" : "DISABLED";
                 response["position"] = motorState.current_position;
                 response["theta"] = motorState.theta;
@@ -107,16 +126,18 @@ void communicate(void* parameters) {
                 xSemaphoreGive(dataMutex);
             }
             else if (reqType == RequestType::Reset) {
-                // bool does not need to be protected by mutex because it is atomic
+                // reset the system and respond with the new state once the reset is complete
+                xSemaphoreTake(dataMutex, portMAX_DELAY);
                 motorState.needs_reset = true;
-                send_debug_message("Reset requested");
-                // busy wait until the reset is complete
-                // we don't want to process any other commands until the reset is complete
+                xSemaphoreGive(dataMutex);
+
+                DEBUG("Waiting for reset to complete");
                 while (motorState.needs_reset) {
-                    vTaskDelay(pdMS_TO_TICKS(10));
+                    vTaskDelay(pdMS_TO_TICKS(1));
                 }
 
-                response["status"] = motorState.enabled ? "OK" : "DISABLED";
+                xSemaphoreTake(dataMutex, portMAX_DELAY);
+                response["status"] = "OK";
                 response["position"] = motorState.current_position;
                 response["theta"] = motorState.theta;
                 response["angular_velocity"] = motorState.angular_velocity;
@@ -124,6 +145,7 @@ void communicate(void* parameters) {
                 response["limitR"] = motorState.limitR;
                 response["target"] = motorState.target_position;
                 response["enabled"] = motorState.enabled;
+                xSemaphoreGive(dataMutex);
             }
             else {
                 response["status"] = "ERROR";
@@ -137,6 +159,8 @@ void communicate(void* parameters) {
     }
 }
 
+// This task is responsible for monitoring the state
+// and updating the global state of the system
 void monitor(void* parameters) {
     ESP32Encoder encoder;
     encoder.attachFullQuad(ENCODER_PIN_A, ENCODER_PIN_B);
@@ -174,17 +198,20 @@ void monitor(void* parameters) {
         motorState.angular_velocity = filtered_velocity;
         xSemaphoreGive(dataMutex);
 
-        vTaskDelay(pdMS_TO_TICKS(5));
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
+// This task is responsible for controlling the motor
 void act(void* parameters) {
     AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
-    stepper.setMaxSpeed(100000);
-    stepper.setAcceleration(10000);
+    stepper.setMaxSpeed(MAX_SPEED);
+    stepper.setAcceleration(MAX_ACCEL);
     pinMode(MOTOR_ENABLE, OUTPUT);
+    digitalWrite(MOTOR_ENABLE, HIGH);
 
     for (;;) {
+        // read the current state of the system
         xSemaphoreTake(dataMutex, portMAX_DELAY);
         bool enabled = motorState.enabled;
         int32_t target = motorState.target_position;
@@ -195,6 +222,7 @@ void act(void* parameters) {
 
         // if a limit switch was triggered, disable the motor
         if (limitStateL || limitStateR) {
+            DEBUG("Limit switch triggered, disabling motor");
             digitalWrite(MOTOR_ENABLE, LOW);
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             motorState.enabled = false;
@@ -202,54 +230,69 @@ void act(void* parameters) {
         }
 
         if (needs_reset) {
-            send_debug_message("Resetting pendulum");
+            stepper.setMaxSpeed(SAFE_SPEED);
+            DEBUG("Motor reset requested");
+            
+            // first we need to find both limit switches
+            // move the motor to the right until the right limit switch is triggered
+            // then move the motor to the left until the left limit switch is triggered
+            // finally, move the motor to the center and set the current position to 0
+            // clear the needs_reset flag
+
+            // find the right limit switch
+
+            DEBUG("Finding right limit switch");
             digitalWrite(MOTOR_ENABLE, HIGH);
+            stepper.moveTo(-100000);
+            while (!limitStateR) {
+                stepper.run();
+                xSemaphoreTake(dataMutex, portMAX_DELAY);
+                limitStateR = motorState.limitR;
+                xSemaphoreGive(dataMutex);
+            }
+
+            digitalWrite(MOTOR_ENABLE, LOW);
+            long rightPosition = stepper.currentPosition();
+            stepper.setCurrentPosition(rightPosition);
+            DEBUG("Found right limit switch at %d", rightPosition);
+
+            // find the left limit switch
+
+            DEBUG("Finding left limit switch");
+            digitalWrite(MOTOR_ENABLE, HIGH);
+            stepper.moveTo(100000);
+            while (!limitStateL) {
+                stepper.run();
+                xSemaphoreTake(dataMutex, portMAX_DELAY);
+                limitStateL = motorState.limitL;
+                xSemaphoreGive(dataMutex);
+            }
+
+            digitalWrite(MOTOR_ENABLE, LOW);
+            long leftPosition = stepper.currentPosition();
+            stepper.setCurrentPosition(leftPosition);
+            DEBUG("Found left limit switch at %d", leftPosition);
+
+            // move to the center
+            stepper.setMaxSpeed(MAX_SPEED);
+            long center = (rightPosition + leftPosition) / 2;
+            DEBUG("Moving to center at %d", center);
+            digitalWrite(MOTOR_ENABLE, HIGH);
+            stepper.moveTo(center);
+            stepper.runToPosition();
+            stepper.setCurrentPosition(0);
+            DEBUG("Moved to center");
+
             xSemaphoreTake(dataMutex, portMAX_DELAY);
+            motorState.current_position = 0;
+            motorState.target_position = 0;
             motorState.enabled = true;
+            motorState.needs_reset = false;
             xSemaphoreGive(dataMutex);
 
-            // to reset we need to move the cart to both limits, where they will stop and then back to the center
-            // setting the center as the 0 position
-            // being aware that we may currently be at a limit, we need to move away from it first
-            if (limitStateL) {
-                send_debug_message(sprintf("Moving away from left limit"
-                int32_t left_limit_position = stepper.currentPosition();
-                stepper.moveTo(1000);
-                while (limitStateR == false) {
-                    stepper.run();
-                    vTaskDelay(pdMS_TO_TICKS(1));
-                    xSemaphoreTake(dataMutex, portMAX_DELAY);
-                    limitStateR = motorState.limitR;
-                    xSemaphoreGive(dataMutex);
-                }
-
-                // stop the motor
-                digitalWrite(MOTOR_ENABLE, LOW);
-                stepper.setCurrentPosition(stepper.currentPosition());
-
-                // move to the center
-                int32_t right_limit_position = stepper.currentPosition();
-                int32_t center_position = (left_limit_position + right_limit_position) / 2;
-                digitalWrite(MOTOR_ENABLE, HIGH);
-                stepper.moveTo(center_position);
-
-                while (stepper.currentPosition() != center_position) {
-                    stepper.run();
-                    vTaskDelay(pdMS_TO_TICKS(1));
-                }
-
-                // update the current position to the center
-                xSemaphoreTake(dataMutex, portMAX_DELAY);
-                motorState.current_position = center_position;
-                motorState.target_position = center_position;
-                motorState.needs_reset = false;
-                xSemaphoreGive(dataMutex);
-                send_debug_message("Reset complete");
-            }
+            continue;
         }
 
-        digitalWrite(MOTOR_ENABLE, enabled ? LOW : HIGH);
-        
         if (enabled) {
             stepper.moveTo(target);
             stepper.run();
@@ -257,9 +300,12 @@ void act(void* parameters) {
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             motorState.current_position = stepper.currentPosition();
             xSemaphoreGive(dataMutex);
+
+            if (stepper.distanceToGo() != 0) {
+                DEBUG("Moving to %d, current position: %d", target, motorState.current_position);
+            }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
