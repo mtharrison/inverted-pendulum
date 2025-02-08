@@ -6,6 +6,15 @@
 #include "freertos/semphr.h"
 #include "limit.h"
 
+const char* ssid = "SKYHI4C2-2.4ghz";
+const char* password = "1gxFtvUHC6xi";
+
+// OTA
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+
 // Configuration
 #define SERIAL_BUFFER_SIZE 256
 #define MICROSTEPS 1600
@@ -29,14 +38,22 @@ struct PendulumState {
     bool limitL = false;
     bool limitR = false;
     bool enabled = true;
+    bool needs_reset = false;
 };
 
-enum class RequestType : uint8_t {
+enum class RequestType : int {
     Observe = 0, 
-    Step = 1
+    Step = 1,
+    Reset = 2
 };
 
 PendulumState motorState;
+
+void send_debug_message(const char* message) {
+    Serial.print("{\"status\":\"DEBUG\",\"message\":\"");
+    Serial.print(message);
+    Serial.println("\"}");
+}
 
 void communicate(void* parameters) {
     JsonDocument request;
@@ -47,7 +64,6 @@ void communicate(void* parameters) {
             size_t len = Serial.readBytesUntil('\n', buffer, SERIAL_BUFFER_SIZE-1);
             buffer[len] = '\0';
 
-
             DeserializationError error = deserializeJson(request, buffer);
             if (error) {
                 Serial.print("{\"error\":\"");
@@ -55,10 +71,10 @@ void communicate(void* parameters) {
                 Serial.println("\"}");
                 continue;
             }
-
+                    
             JsonDocument response;
             int id = request[0];
-            auto reqType = static_cast<RequestType>(request["type"].as<uint8_t>());
+            auto reqType = static_cast<RequestType>(request[1].as<int>());
 
             response["id"] = id;
             
@@ -90,6 +106,25 @@ void communicate(void* parameters) {
                 response["enabled"] = motorState.enabled;
                 xSemaphoreGive(dataMutex);
             }
+            else if (reqType == RequestType::Reset) {
+                // bool does not need to be protected by mutex because it is atomic
+                motorState.needs_reset = true;
+                send_debug_message("Reset requested");
+                // busy wait until the reset is complete
+                // we don't want to process any other commands until the reset is complete
+                while (motorState.needs_reset) {
+                    vTaskDelay(pdMS_TO_TICKS(10));
+                }
+
+                response["status"] = motorState.enabled ? "OK" : "DISABLED";
+                response["position"] = motorState.current_position;
+                response["theta"] = motorState.theta;
+                response["angular_velocity"] = motorState.angular_velocity;
+                response["limitL"] = motorState.limitL;
+                response["limitR"] = motorState.limitR;
+                response["target"] = motorState.target_position;
+                response["enabled"] = motorState.enabled;
+            }
             else {
                 response["status"] = "ERROR";
                 response["message"] = "Invalid request type";
@@ -119,11 +154,6 @@ void monitor(void* parameters) {
         xSemaphoreTake(dataMutex, portMAX_DELAY);
         motorState.limitL = limitStateL;
         motorState.limitR = limitStateR;
-        
-        if (limitStateL || limitStateR) {
-            motorState.enabled = false;
-            digitalWrite(MOTOR_ENABLE, LOW); // Active LOW enable
-        }
         xSemaphoreGive(dataMutex);
 
         // Update position and velocity
@@ -158,7 +188,65 @@ void act(void* parameters) {
         xSemaphoreTake(dataMutex, portMAX_DELAY);
         bool enabled = motorState.enabled;
         int32_t target = motorState.target_position;
+        bool needs_reset = motorState.needs_reset;
+        bool limitStateL = motorState.limitL;
+        bool limitStateR = motorState.limitR;
         xSemaphoreGive(dataMutex);
+
+        // if a limit switch was triggered, disable the motor
+        if (limitStateL || limitStateR) {
+            digitalWrite(MOTOR_ENABLE, LOW);
+            xSemaphoreTake(dataMutex, portMAX_DELAY);
+            motorState.enabled = false;
+            xSemaphoreGive(dataMutex);
+        }
+
+        if (needs_reset) {
+            send_debug_message("Resetting pendulum");
+            digitalWrite(MOTOR_ENABLE, HIGH);
+            xSemaphoreTake(dataMutex, portMAX_DELAY);
+            motorState.enabled = true;
+            xSemaphoreGive(dataMutex);
+
+            // to reset we need to move the cart to both limits, where they will stop and then back to the center
+            // setting the center as the 0 position
+            // being aware that we may currently be at a limit, we need to move away from it first
+            if (limitStateL) {
+                send_debug_message(sprintf("Moving away from left limit"
+                int32_t left_limit_position = stepper.currentPosition();
+                stepper.moveTo(1000);
+                while (limitStateR == false) {
+                    stepper.run();
+                    vTaskDelay(pdMS_TO_TICKS(1));
+                    xSemaphoreTake(dataMutex, portMAX_DELAY);
+                    limitStateR = motorState.limitR;
+                    xSemaphoreGive(dataMutex);
+                }
+
+                // stop the motor
+                digitalWrite(MOTOR_ENABLE, LOW);
+                stepper.setCurrentPosition(stepper.currentPosition());
+
+                // move to the center
+                int32_t right_limit_position = stepper.currentPosition();
+                int32_t center_position = (left_limit_position + right_limit_position) / 2;
+                digitalWrite(MOTOR_ENABLE, HIGH);
+                stepper.moveTo(center_position);
+
+                while (stepper.currentPosition() != center_position) {
+                    stepper.run();
+                    vTaskDelay(pdMS_TO_TICKS(1));
+                }
+
+                // update the current position to the center
+                xSemaphoreTake(dataMutex, portMAX_DELAY);
+                motorState.current_position = center_position;
+                motorState.target_position = center_position;
+                motorState.needs_reset = false;
+                xSemaphoreGive(dataMutex);
+                send_debug_message("Reset complete");
+            }
+        }
 
         digitalWrite(MOTOR_ENABLE, enabled ? LOW : HIGH);
         
@@ -177,9 +265,49 @@ void act(void* parameters) {
 
 void setup() {
     Serial.begin(115200);
+     WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+      Serial.println("Connection Failed! Rebooting...");
+      delay(5000);
+      ESP.restart();
+    }
+
+    ArduinoOTA
+      .onStart([]() {
+        String type;
+        if (ArduinoOTA.getCommand() == U_FLASH)
+          type = "sketch";
+        else // U_SPIFFS
+          type = "filesystem";
+
+        // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+        Serial.println("Start updating " + type);
+      })
+      .onEnd([]() {
+        Serial.println("\nEnd");
+      })
+      .onProgress([](unsigned int progress, unsigned int total) {
+        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+      })
+      .onError([](ota_error_t error) {
+        Serial.printf("Error[%u]: ", error);
+        if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+        else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+        else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+        else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+        else if (error == OTA_END_ERROR) Serial.println("End Failed");
+      });
+
+    ArduinoOTA.begin();
+
+    Serial.println("Ready");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+
     xTaskCreatePinnedToCore(communicate, "Communicate", 4096, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(monitor, "Monitor", 4096, NULL, 4, NULL, 1);
     xTaskCreatePinnedToCore(act, "Act", 4096, NULL, 3, NULL, 1);
 }
 
-void loop() { vTaskDelete(NULL); }
+void loop() { ArduinoOTA.handle();}
