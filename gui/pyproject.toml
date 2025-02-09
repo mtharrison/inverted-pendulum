@@ -1,5 +1,5 @@
 [project]
-name = "client"
+name = "gui"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -10,4 +10,5 @@ dependencies = [
     "pygame>=2.6.1",
     "pyserial>=3.5",
     "screeninfo>=0.8.1",
+    "watchgod>=0.8.2",
 ]

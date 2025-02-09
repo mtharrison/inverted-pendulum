@@ -5,11 +5,6 @@ import time
 import os
 from colorama import Fore, Back, Style
 
-
-DEBUG = os.environ.get("DEBUG", False)
-print("DEBUG:", DEBUG)
-
-
 class SerialCommunicator:
     def __init__(self, port, baudrate=9600, read_timeout=1, dummy=False):
         """
@@ -19,7 +14,6 @@ class SerialCommunicator:
         :param baudrate: Baudrate for the serial port.
         :param read_timeout: Timeout (in seconds) for reading from the port.
         """
-        # Open the serial port.
         if dummy:
             self.ser = serial.serial_for_url("loop://", timeout=read_timeout)
         else:
@@ -46,15 +40,13 @@ class SerialCommunicator:
                 line = self.ser.readline()
                 if not line:
                     continue  # Timeout, no data received.
-                # Decode the line and parse the JSON.
                 try:
                     message = json.loads(line.decode("utf-8").strip())
                 except json.JSONDecodeError:
-                    if DEBUG:
-                        print(
-                            Fore.WHITE + Style.DIM + "[SERIAL]:",
-                            line.decode("utf-8").strip() + Style.RESET_ALL,
-                        )
+                    print(
+                        Fore.WHITE + Style.DIM + "[SERIAL]:",
+                        line.decode("utf-8").strip() + Style.RESET_ALL,
+                    )
                     continue
                 request_id = message.get("id")
                 if request_id is not None:
@@ -108,7 +100,7 @@ class SerialCommunicator:
             # If no response arrives in time, remove the pending request and raise an error.
             with self.pending_lock:
                 self.pending_requests.pop(request_id, None)
-            raise TimeoutError(f"Timed out waiting for response to command '{command}'")
+            return {}
 
     def observe(self):
         return self.send_request("observe")
