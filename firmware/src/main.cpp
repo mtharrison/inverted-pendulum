@@ -6,6 +6,7 @@
 #include "freertos/semphr.h"
 #include "limit.h"
 #include "config.h"
+#include "main.h"
 
 #define RESET_BIT	    BIT0
 #define RESET_CLEAR_BIT	BIT1
@@ -39,6 +40,15 @@ void DEBUG(const char* message, ...) {
 }
 
 EventGroupHandle_t resetEventGroup = xEventGroupCreate();
+
+void handle_move_command(int action) {
+    if(xSemaphoreTake(dataMutex, portMAX_DELAY)) {
+        if(motorState.enabled) {
+            motorState.target_position += action;
+        }
+        xSemaphoreGive(dataMutex);
+    }
+}
 
 void communicate(void* parameters) {
     JsonDocument request;
