@@ -1,130 +1,144 @@
-import serial
 import json
+import serial
 import threading
-import queue
-from typing import Dict, Any, Optional
 import time
-import sys
 import os
+from colorama import Fore, Back, Style
 
-DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+
+DEBUG = os.environ.get("DEBUG", False)
+print("DEBUG:", DEBUG)
 
 class SerialCommunicator:
-    def __init__(self, port: str ='/dev/cu.usbmodem2101', baudrate: int = 115200):
+    def __init__(self, port, baudrate=9600, read_timeout=1):
         """
-        Initialize serial communication with JSON message handling.
-        
-        Args:
-            port: Serial port name (e.g., 'COM1' or '/dev/ttyUSB0')
-            baudrate: Baud rate for serial communication
+        Initialize the communicator.
+
+        :param port: Serial port (e.g., 'COM3' or '/dev/ttyUSB0')
+        :param baudrate: Baudrate for the serial port.
+        :param read_timeout: Timeout (in seconds) for reading from the port.
         """
-        self.serial = serial.Serial(port, baudrate)
-        self.response_queues: Dict[int, queue.Queue] = {}
-        self.current_id = 0
-        self.lock = threading.Lock()
-        
-        # Start reading thread
-        self.running = True
-        self.reader_thread = threading.Thread(target=self._read_responses, daemon=True)
+        # Open the serial port.
+        self.ser = serial.Serial(port, baudrate, timeout=read_timeout)
+
+        # Dictionary to hold pending requests: {request_id: (threading.Event, response_container)}
+        self.pending_requests = {}
+        self.pending_lock = threading.Lock()
+
+        # Counter for generating integer message ids.
+        self.next_request_id = 1
+
+        # Event to signal the reader thread to stop.
+        self.stop_event = threading.Event()
+
+        # Start a background thread that continuously reads from the serial port.
+        self.reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
         self.reader_thread.start()
-    
-    def _get_next_id(self) -> int:
-        """Get next message ID with thread safety."""
-        with self.lock:
-            msg_id = self.current_id
-            self.current_id += 1
-            return msg_id
-    
-    def _read_responses(self):
-        """Background thread to continuously read from serial port."""
-        buffer = ""
-        while self.running:
-            if self.serial.in_waiting:
-                char = self.serial.read().decode()
-                buffer += char
-                
-                if char == '\n':  # Assuming JSON messages end with newline
-                    try:
-                        response = json.loads(buffer)
-                        if 'id' in response:
-                            msg_id = response['id']
-                            if msg_id in self.response_queues:
-                                self.response_queues[msg_id].put(response)
-                    except json.JSONDecodeError:
-                        if DEBUG:
-                            print(f"SERIAL: {buffer}")
-                    buffer = ""
-            else:
-                time.sleep(0.01)  # Prevent busy waiting
-    
-    def _send_command(self, command: str, params: Optional[Dict] = None, timeout: float = 5.0) -> Dict:
-        """
-        Send a command and wait for its response.
-        
-        Args:
-            command: Command name
-            params: Optional parameters for the command
-            timeout: Maximum time to wait for response in seconds
-        
-        Returns:
-            Response data as dictionary
-        
-        Raises:
-            TimeoutError: If response isn't received within timeout
-            RuntimeError: If serial port is closed
-        """
-        if not self.serial.is_open:
-            raise RuntimeError("Serial port is closed")
-            
-        msg_id = self._get_next_id()
-        message = {
-            "id": msg_id,
-            "command": command
-        }
+
+    def _reader_loop(self):
+        """Continuously read lines from the serial port and dispatch responses."""
+        while not self.stop_event.is_set():
+            try:
+                line = self.ser.readline()
+                if not line:
+                    continue  # Timeout, no data received.
+                # Decode the line and parse the JSON.
+                try:
+                    message = json.loads(line.decode('utf-8').strip())
+                except json.JSONDecodeError:
+                    if DEBUG:
+                        print(Fore.WHITE + Style.DIM + "[SERIAL]:", line.decode('utf-8').strip() + Style.RESET_ALL)
+                    continue
+                request_id = message.get('id')
+                if request_id is not None:
+                    # If the message contains an id, look for a matching pending request.
+                    with self.pending_lock:
+                        pending = self.pending_requests.pop(request_id, None)
+                    if pending:
+                        event, response_container = pending
+                        response_container['response'] = message
+                        event.set()  # Unblock the waiting thread.
+                    else:
+                        # No pending request found; this might be an unsolicited response.
+                        self.handle_async_message(message)
+                else:
+                    # Handle messages without an id (asynchronous messages).
+                    self.handle_async_message(message)
+            except Exception as e:
+                # In production code you may want to log this error.
+                print(f"Error reading from serial port: {e}")
+
+    def handle_async_message(self, message):
+        print("Received message:", message)
+
+    def send_request(self, command, timeout=5, **params):
+        # Generate a unique integer id for this request.
+        with self.pending_lock:
+            request_id = self.next_request_id
+            self.next_request_id += 1
+
+        message = {'id': request_id, 'command': command}
         if params:
-            message["params"] = params
-            
-        # Create queue for this request
-        self.response_queues[msg_id] = queue.Queue()
-        
-        # Send request
-        self.serial.write((json.dumps(message) + '\n').encode())
-        
-        try:
-            # Wait for response
-            response = self.response_queues[msg_id].get(timeout=timeout)
-            return response
-        except queue.Empty:
-            raise TimeoutError(f"No response received for command '{command}' within {timeout} seconds")
-        finally:
-            # Clean up
-            del self.response_queues[msg_id]
+            message['params'] = params
+        message_str = json.dumps(message)
+
+        # Write the message (terminated by a newline) to the serial port.
+        self.ser.write((message_str + "\n").encode('utf-8'))
+
+        # Create an event and container for the response.
+        event = threading.Event()
+        response_container = {}
+
+        # Store them in the pending_requests dictionary.
+        with self.pending_lock:
+            self.pending_requests[request_id] = (event, response_container)
+
+        # Wait for the event to be set by the reader thread.
+        # You can adjust the timeout as needed.
+        if event.wait(timeout):
+            return response_container['response']
+        else:
+            # If no response arrives in time, remove the pending request and raise an error.
+            with self.pending_lock:
+                self.pending_requests.pop(request_id, None)
+            raise TimeoutError(f"Timed out waiting for response to command '{command}'")
+
+    def observe(self):
+        return self.send_request("observe")
     
-    def observe(self) -> Dict[str, Any]:
-        """Get current observation from the device."""
-        return self._send_command("observe")
+    def step(self, action):
+        return self.send_request("step", action=action)
     
-    def step(self, action: int) -> Dict[str, Any]:
-        """Set a parameter on the device."""
-        return self._send_command("step", {"action": action})
-    
-    def reset(self) -> Dict[str, Any]:
-        """Set a parameter on the device."""
-        return self._send_command("reset", timeout=30.0)
-    
+    def reset(self):
+        return self.send_request("reset", timeout=30)
+
     def close(self):
-        """Close the serial connection and stop the reading thread."""
-        self.running = False
-        if self.reader_thread.is_alive():
-            self.reader_thread.join()
-        if self.serial.is_open:
-            self.serial.close()
+        self.stop_event.set()
+        self.reader_thread.join(timeout=2)
+        self.ser.close()
 
 
+# Example usage:
 if __name__ == "__main__":
-    comm = SerialCommunicator()
-    # for i in range(5):
-    #     print(comm.step(i))
-    #     time.sleep(1)
-    print(comm.reset())
-    comm.close()
+    # Replace 'COM3' or '/dev/ttyUSB0' with your actual serial port.
+    communicator = SerialCommunicator(port='/dev/cu.usbmodem2101', baudrate=9600)
+
+    try:
+        # The get_observation() method hides the fact that a message is sent and a response is waited on.
+        response = communicator.observe()
+        print("Observation response:", response)
+
+        # The step() method sends a message and waits for a response.
+        response = communicator.step(1)
+        print("Step response:", response)
+
+        # The reset() method waits for a response, but with a longer timeout.
+        response = communicator.reset()
+        print("Reset response:", response)
+
+    except TimeoutError as e:
+        print(e)
+
+    finally:
+        communicator.close()
+
