@@ -38,7 +38,7 @@ class PendulumVisualizerDPG:
 
         # History for charts
         self.angle_history = []  # will store continuous angles
-        self.velocity_history = []  # store angular velocity history
+        self.angular_velocity_history = []  # store angular velocity history
 
         # Chart sizes (we use these to trim the history lists)
         self.angle_chart_width = round(self.width / 2) - 30
@@ -49,7 +49,7 @@ class PendulumVisualizerDPG:
         self.pendulum_width = self.width / 2
 
         # Initialize your serial communicator (adjust the port as needed)
-        self.serial = SerialCommunicator(port="/dev/cu.usbmodem2101", dummy=True)
+        self.serial = SerialCommunicator(port="/dev/cu.usbmodem2101")
 
         # ---------------------
         # Initialize Dear PyGui
@@ -131,11 +131,11 @@ class PendulumVisualizerDPG:
                                 ):
                                     dpg.add_plot_legend()
                                     dpg.add_plot_axis(dpg.mvXAxis, label="Time", auto_fit=True)
-                                    self.velocity_y_axis = dpg.add_plot_axis(
+                                    self.angular_velocity_y_axis = dpg.add_plot_axis(
                                         dpg.mvYAxis, label="Angular Velocity"
                                     )
-                                    self.velocity_series = dpg.add_line_series(
-                                    [], [], label="Angular Velocity", parent=self.velocity_y_axis
+                                    self.angular_velocity_series = dpg.add_line_series(
+                                    [], [], label="Angular Velocity", parent=self.angular_velocity_y_axis
                                 )
                 
                 with dpg.table_row():     
@@ -209,6 +209,11 @@ class PendulumVisualizerDPG:
                         with dpg.group(tag="button group sub", horizontal=True):
                             dpg.add_button(tag="Btn1", label="START TRAINING")
                             dpg.add_button(tag="Btn2", label="RESET")
+                            
+                            with dpg.item_handler_registry(tag="reset handler") as handler:
+                                dpg.add_item_clicked_handler(callback=self.reset)
+                                
+                            dpg.bind_item_handler_registry("Btn2", "reset handler")
                     
                         dpg.add_slider_double(width=400, label="manual cart position", max_value=1000, min_value=-1000, format="position = %.14f")
                 
@@ -237,10 +242,7 @@ class PendulumVisualizerDPG:
                             pass
                     
             
-            # with dpg.item_handler_registry(tag="reset handler") as handler:
-            #     dpg.add_item_clicked_handler(callback=self.reset)
-                
-            # dpg.bind_item_handler_registry("Btn2", "reset handler")
+            
 
             
             # The drawlist acts as our drawing canvas.
@@ -251,7 +253,7 @@ class PendulumVisualizerDPG:
 
         dpg.setup_dearpygui()
 
-        demo.show_demo()
+        # demo.show_demo()
 
 
         # dpg.show_style_editor()
@@ -275,21 +277,21 @@ class PendulumVisualizerDPG:
             data = self.serial.observe()
             if data.get("status") == "OK":
                 angle = data.get("theta", 0)
-                velocity = data.get("angular_velocity", 0)
+                angular_velocity = data.get("angular_velocity", 0)
 
                 # Update history lists (store the continuous angle)
                 self.angle_history.append(self.continuous_angle(angle))
-                self.velocity_history.append(velocity)
+                self.angular_velocity_history.append(angular_velocity)
 
                 # Keep only the most recent data (based on chart width)
                 self.angle_history = self.angle_history[-self.angle_chart_width :]
-                self.velocity_history = self.velocity_history[
+                self.angular_velocity_history = self.angular_velocity_history[
                     -self.velocity_chart_width :
                 ]
 
                 return {
                     "angle": angle,
-                    "velocity": velocity,
+                    "angular_velocity": angular_velocity,
                     "limitL": data.get("limitL", False),
                     "limitR": data.get("limitR", False),
                 }
@@ -331,7 +333,7 @@ class PendulumVisualizerDPG:
         dpg.delete_item(self.pendulum_drawlist, children_only=True)
 
         # Define the pivot and rod length (same as the pygame version)
-        pivot = (self.pendulum_width // 2, self.pend_drawlist_height//2)
+        pivot = (self.pendulum_width // 2, self.pend_drawlist_height//2 - 10)
         rod_length = 150
         bob_x = pivot[0] + rod_length * math.sin(-self.angle)
         bob_y = pivot[1] + rod_length * math.cos(self.angle)
@@ -413,22 +415,22 @@ class PendulumVisualizerDPG:
         # Set fixed y-axis limits for angle chart
         dpg.set_axis_limits(self.angle_y_axis, -1.2, 1.2)
 
-        # Update velocity chart data
-        x_data_vel = list(range(len(self.velocity_history)))
-        y_data_vel = self.velocity_history
-        dpg.set_value(self.velocity_series, [x_data_vel, y_data_vel])
+        # Update angular velocity chart data
+        x_data_vel = list(range(len(self.angular_velocity_history)))
+        y_data_vel = self.angular_velocity_history
+        dpg.set_value(self.angular_velocity_series, [x_data_vel, y_data_vel])
         dpg.set_value(
             "ang_velocity_text", f"Angular Velocity: {self.angular_velocity:.2f} rad/s"
         )
         # Set fixed y-axis limits for velocity chart (adjust as necessary)
-        dpg.set_axis_limits(self.velocity_y_axis, -40, 40)
+        dpg.set_axis_limits(self.angular_velocity_y_axis, -40, 40)
 
     def update(self):
         """Fetch new serial data, update state and redraw everything."""
         data = self.fetch_serial_data()
         if data:
             self.angle = data["angle"]
-            self.angular_velocity = data["velocity"]
+            self.angular_velocity = data["angular_velocity"]
             self.limitL = data["limitL"]
             self.limitR = data["limitR"]
 
