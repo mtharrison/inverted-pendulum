@@ -10,10 +10,6 @@
 #define RESET_BIT	    BIT0
 #define RESET_CLEAR_BIT	BIT1
 
-// Shared data protection
-SemaphoreHandle_t dataMutex = xSemaphoreCreateMutex();
-
-// Motor control structure
 struct PendulumState {
     int32_t current_position = 0;
     int32_t target_position = 0;
@@ -25,6 +21,9 @@ struct PendulumState {
     bool enabled = true;
     bool resetting = false;
 };
+
+// Shared data protection
+SemaphoreHandle_t dataMutex = xSemaphoreCreateMutex();
 
 // Global state of the system
 PendulumState motorState;
