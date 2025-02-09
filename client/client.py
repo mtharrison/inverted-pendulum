@@ -118,27 +118,3 @@ class SerialCommunicator:
         self.ser.close()
 
 
-# Example usage:
-if __name__ == "__main__":
-    # Replace 'COM3' or '/dev/ttyUSB0' with your actual serial port.
-    communicator = SerialCommunicator(port='/dev/cu.usbmodem2101', baudrate=9600)
-
-    try:
-        # The get_observation() method hides the fact that a message is sent and a response is waited on.
-        response = communicator.observe()
-        print("Observation response:", response)
-
-        # The step() method sends a message and waits for a response.
-        response = communicator.step(1)
-        print("Step response:", response)
-
-        # The reset() method waits for a response, but with a longer timeout.
-        response = communicator.reset()
-        print("Reset response:", response)
-
-    except TimeoutError as e:
-        print(e)
-
-    finally:
-        communicator.close()
-

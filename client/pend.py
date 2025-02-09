@@ -5,6 +5,8 @@ import json
 from threading import Lock
 from time import perf_counter
 
+from client import SerialCommunicator
+
 class PendulumVisualizer:
     def __init__(self):
         pygame.init()
@@ -12,9 +14,6 @@ class PendulumVisualizer:
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption("Pendulum Visualizer")
         
-        # Configuration
-        self.serial_port = '/dev/cu.usbmodem2101'
-        self.baudrate = 115200
         self.update_interval = 0.016  # ~60 Hz
         self.velocity_scale = 40  # Adjust this based on expected velocity range
         
@@ -33,7 +32,10 @@ class PendulumVisualizer:
         self.serial_lock = Lock()
         
         # Initialize serial connection
-        self.ser = serial.Serial(self.serial_port, self.baudrate, timeout=0.1)
+        self.serial = SerialCommunicator(port='/dev/cu.usbmodem2101')
+
+    def __del__(self):
+        self.serial.close()
 
     def continuous_angle(self, angle):
         """Convert angle to continuous range [0, 2π)"""
@@ -42,28 +44,22 @@ class PendulumVisualizer:
     def fetch_serial_data(self):
         """Read data from serial port and update state"""
         try:
-            with self.serial_lock:
-                # Request observation data
-                self.ser.write(json.dumps([0, 0]).encode() + b'\n')
-                response = self.ser.read_until(b'\n').decode().strip()
+            data = self.serial.observe()
+            if data.get('status') == 'OK':
+                # Update histories before trimming
+                self.angle_history.append(self.continuous_angle(data.get('theta', 0)))
+                self.velocity_history.append(data.get('angular_velocity', 0))
                 
-            if response:
-                data = json.loads(response)
-                if data.get('status') == 'OK':
-                    # Update histories before trimming
-                    self.angle_history.append(self.continuous_angle(data.get('theta', 0)))
-                    self.velocity_history.append(data.get('angular_velocity', 0))
-                    
-                    # Trim histories to chart widths
-                    self.angle_history = self.angle_history[-self.angle_chart_rect.width:]
-                    self.velocity_history = self.velocity_history[-self.velocity_chart_rect.width:]
-                    
-                    return {
-                        'angle': data.get('theta', 0),
-                        'velocity': data.get('angular_velocity', 0),
-                        'limitL': data.get('limitL', False),
-                        'limitR': data.get('limitR', False)
-                    }
+                # Trim histories to chart widths
+                self.angle_history = self.angle_history[-self.angle_chart_rect.width:]
+                self.velocity_history = self.velocity_history[-self.velocity_chart_rect.width:]
+                
+                return {
+                    'angle': data.get('theta', 0),
+                    'velocity': data.get('angular_velocity', 0),
+                    'limitL': data.get('limitL', False),
+                    'limitR': data.get('limitR', False)
+                }
         except (json.JSONDecodeError, serial.SerialException) as e:
             print(f"Serial error: {e}")
         return None
@@ -94,7 +90,6 @@ class PendulumVisualizer:
         self.draw_limit((1100, 100), self.limitR, "RIGHT")
 
     def draw_limit(self, position, triggered, label):
-        print(position , triggered, label)
         """Draw individual limit switch"""
         color = (255, 0, 0) if triggered else (255, 255, 255)
         pygame.draw.circle(self.screen, color, position, 20)
@@ -210,7 +205,6 @@ class PendulumVisualizer:
             
             pygame.time.wait(1)
         
-        self.ser.close()
         pygame.quit()
 
 if __name__ == "__main__":
