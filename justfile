@@ -1,2 +1,4 @@
 gui:
-    cd gui && uv run dpg.py
+    cd python/gui && uv run main.py
+dgui:
+    cd python && uv run watchgod gui/main.launch

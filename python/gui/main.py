@@ -9,7 +9,7 @@ import serial
 import dearpygui.dearpygui as dpg
 import dearpygui.demo as demo
 
-from client import SerialCommunicator
+from serial_client import SerialCommunicator
 from screeninfo import get_monitors
 
 class PendulumVisualizerDPG:
