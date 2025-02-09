@@ -9,11 +9,8 @@ import serial
 import dearpygui.dearpygui as dpg
 import dearpygui.demo as demo
 
-
-from client import SerialCommunicator  # assuming your serial client is the same
-
+from client import SerialCommunicator
 from screeninfo import get_monitors
-
 
 class PendulumVisualizerDPG:
     def __init__(self, monitor):
@@ -22,7 +19,7 @@ class PendulumVisualizerDPG:
         self.width = monitor.width - margin
         self.height = monitor.height - margin
         self.update_interval = 0.016  # ~60 Hz
-        self.velocity_scale = 40  # for scaling the velocity chart (if needed)
+        self.velocity_scale = 40
         pend_chart_height = 280
         self.pendulum_window_width = self.width / 2
         self.pend_drawlist_height = self.height - (2 * pend_chart_height) - 55
@@ -33,25 +30,31 @@ class PendulumVisualizerDPG:
         self.limitL = False
         self.limitR = False
         self.running = True
-        
-        
+        self.last_update = perf_counter()
 
         # History for charts
-        self.angle_history = []  # will store continuous angles
-        self.angular_velocity_history = []  # store angular velocity history
+        self.angle_history = []
+        self.angular_velocity_history = []
+        self.position_history = []
+        self.velocity_history = []
 
-        # Chart sizes (we use these to trim the history lists)
+        # Chart sizes
         self.angle_chart_width = round(self.width / 2) - 30
         self.angle_chart_height = round(self.height / 2) - 50
         self.velocity_chart_width = round(self.width / 2) - 30
         self.velocity_chart_height = round(self.height / 2) - 50
-
         self.pendulum_width = self.width / 2
 
-        # Initialize your serial communicator (adjust the port as needed)
+        # Initialize serial communicator with callbacks
         self.serial = SerialCommunicator(port="/dev/cu.usbmodem2101")
+        self.request_new_data = True  # Flag to control data requests
+        
+        # Start the observation loop
+        self.start_observation_loop()
 
-        # ---------------------
+        # Initialize Dear PyGui (rest of the GUI initialization remains the same)
+        
+ # ---------------------
         # Initialize Dear PyGui
         # ---------------------
         dpg.create_context()
@@ -215,7 +218,7 @@ class PendulumVisualizerDPG:
                                 
                             dpg.bind_item_handler_registry("Btn2", "reset handler")
                     
-                        dpg.add_slider_double(width=400, label="manual cart position", max_value=1000, min_value=-1000, format="position = %.14f")
+                        dpg.add_slider_double(width=400, label="manual cart position", max_value=1000, min_value=-1000, format="position = %.14f", callback=lambda sender, app_data: self.serial.step(app_data, self.handle_step_response))
                 
                 with dpg.table_row():
                     with dpg.group(tag="episode stats", horizontal=True):
@@ -263,48 +266,69 @@ class PendulumVisualizerDPG:
         dpg.show_viewport()
 
         dpg.set_viewport_pos([0, 0])
-
+        
     def continuous_angle(self, angle):
         """Return an angle in the range [0, 2π)."""
         return angle % (2 * math.pi)
 
-    def fetch_serial_data(self):
-        """
-        Read from the serial port (using your SerialCommunicator)
-        and update history lists.
-        """
-        try:
-            data = self.serial.observe()
-            if data.get("status") == "OK":
-                angle = data.get("theta", 0)
-                angular_velocity = data.get("angular_velocity", 0)
 
-                # Update history lists (store the continuous angle)
-                self.angle_history.append(self.continuous_angle(angle))
-                self.angular_velocity_history.append(angular_velocity)
+    def start_observation_loop(self):
+        """Start a background thread to continuously request observations"""
+        def observation_loop():
+            while self.running:
+                if self.request_new_data:
+                    self.serial.observe(self.handle_observation)
+                    self.request_new_data = False
+                time.sleep(0.016)  # Match GUI update rate
 
-                # Keep only the most recent data (based on chart width)
-                self.angle_history = self.angle_history[-self.angle_chart_width :]
-                self.angular_velocity_history = self.angular_velocity_history[
-                    -self.velocity_chart_width :
-                ]
+        self.observer_thread = threading.Thread(target=observation_loop, daemon=True)
+        self.observer_thread.start()
 
-                return {
-                    "angle": angle,
-                    "angular_velocity": angular_velocity,
-                    "limitL": data.get("limitL", False),
-                    "limitR": data.get("limitR", False),
-                }
-        except (json.JSONDecodeError, serial.SerialException) as e:
-            print(f"Serial error: {e}")
-        return None
+    def handle_observation(self, data):
+        """Callback for handling observation data"""
+        self.request_new_data = True  # Allow requesting new data
+        
+        if data is None:  # Timeout occurred
+            return
+            
+        if data.get("status") == "OK":
+            self.angle = data.get("theta", 0)
+            self.angular_velocity = data.get("angular_velocity", 0)
+            self.limitL = data.get("limitL", False)
+            self.limitR = data.get("limitR", False)
+            
+            # Update history lists
+            self.angle_history.append(self.continuous_angle(self.angle))
+            self.angular_velocity_history.append(self.angular_velocity)
+            
+            # Trim histories to chart width
+            self.angle_history = self.angle_history[-self.angle_chart_width:]
+            self.angular_velocity_history = self.angular_velocity_history[-self.velocity_chart_width:]
+
+    def handle_step_response(self, response):
+        """Callback for handling step responses"""
+        if response is None:  # Timeout occurred
+            print("Step command timed out")
+            return
+            
+        if response.get("status") == "OK":
+            self.request_new_data = True  # Resume observations
+
+    def handle_reset_response(self, response):
+        """Callback for handling reset responses"""
+        if response is None:  # Timeout occurred
+            print("Reset command timed out")
+            return
+            
+        if response.get("status") == "OK":
+            self.angle_history.clear()
+            self.angular_velocity_history.clear()
+            self.position_history.clear()
+            self.velocity_history.clear()
+            self.request_new_data = True  # Resume observations
 
     def handle_key_press(self, sender, app_data):
-        """
-        Called when a key is pressed.
-        In Dear PyGui the key codes for left/right arrows are assumed here
-        to be 263 (left) and 262 (right).
-        """
+        """Handle key press events with callbacks"""
         step = 0
         if app_data == 263:  # left arrow key
             step = -1
@@ -312,16 +336,34 @@ class PendulumVisualizerDPG:
             step = 1
 
         if step != 0:
-            try:
-                # Send a JSON message similar to the pygame version.
-                msg = json.dumps([0, 1, step]).encode() + b"\n"
-                self.serial.write(msg)
-            except serial.SerialException as e:
-                print(f"Write error: {e}")
+            self.request_new_data = False  # Pause observations
+            self.serial.step(step, self.handle_step_response)
 
     def reset(self, sender, app_data):
-        self.serial.reset()
+        """Handle reset button press with callback"""
+        self.request_new_data = False  # Pause observations
+        self.serial.reset(self.handle_reset_response)
 
+    def update(self):
+        """Update GUI elements"""
+        now = perf_counter()
+        if now - self.last_update >= self.update_interval:
+            self.draw_pendulum()
+            self.update_charts()
+            self.last_update = now
+
+    def run(self):
+        """Main update loop"""
+        while dpg.is_dearpygui_running():
+            self.update()
+            dpg.render_dearpygui_frame()
+
+        # Cleanup
+        self.running = False
+        self.observer_thread.join(timeout=1)
+        self.serial.close()
+        dpg.destroy_context()
+        
     def draw_pendulum(self):
         """
         Clear and redraw the pendulum on the drawlist.
@@ -425,32 +467,7 @@ class PendulumVisualizerDPG:
         # Set fixed y-axis limits for velocity chart (adjust as necessary)
         dpg.set_axis_limits(self.angular_velocity_y_axis, -40, 40)
 
-    def update(self):
-        """Fetch new serial data, update state and redraw everything."""
-        data = self.fetch_serial_data()
-        if data:
-            self.angle = data["angle"]
-            self.angular_velocity = data["angular_velocity"]
-            self.limitL = data["limitL"]
-            self.limitR = data["limitR"]
 
-        self.draw_pendulum()
-        self.update_charts()
-
-    def run(self):
-        """Main update loop (runs until the viewport is closed)."""
-        last_update = perf_counter()
-        while dpg.is_dearpygui_running():
-            now = perf_counter()
-            if now - last_update >= self.update_interval:
-                self.update()
-                last_update = now
-
-            dpg.render_dearpygui_frame()
-
-        # On exit, close the serial connection and clean up DPG.
-        self.serial.close()
-        dpg.destroy_context()
 
 def launch():
     for m in get_monitors():
@@ -461,3 +478,5 @@ def launch():
 
 if __name__ == "__main__":
     launch()
+
+
