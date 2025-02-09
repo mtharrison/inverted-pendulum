@@ -9,4 +9,5 @@ dependencies = [
     "dearpygui>=2.0.0",
     "pygame>=2.6.1",
     "pyserial>=3.5",
+    "screeninfo>=0.8.1",
 ]

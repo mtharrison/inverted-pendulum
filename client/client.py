@@ -9,8 +9,9 @@ from colorama import Fore, Back, Style
 DEBUG = os.environ.get("DEBUG", False)
 print("DEBUG:", DEBUG)
 
+
 class SerialCommunicator:
-    def __init__(self, port, baudrate=9600, read_timeout=1):
+    def __init__(self, port, baudrate=9600, read_timeout=1, dummy=False):
         """
         Initialize the communicator.
 
@@ -19,7 +20,10 @@ class SerialCommunicator:
         :param read_timeout: Timeout (in seconds) for reading from the port.
         """
         # Open the serial port.
-        self.ser = serial.Serial(port, baudrate, timeout=read_timeout)
+        if dummy:
+            self.ser = serial.serial_for_url("loop://", timeout=read_timeout)
+        else:
+            self.ser = serial.Serial(port, baudrate, timeout=read_timeout)
 
         # Dictionary to hold pending requests: {request_id: (threading.Event, response_container)}
         self.pending_requests = {}
@@ -44,19 +48,22 @@ class SerialCommunicator:
                     continue  # Timeout, no data received.
                 # Decode the line and parse the JSON.
                 try:
-                    message = json.loads(line.decode('utf-8').strip())
+                    message = json.loads(line.decode("utf-8").strip())
                 except json.JSONDecodeError:
                     if DEBUG:
-                        print(Fore.WHITE + Style.DIM + "[SERIAL]:", line.decode('utf-8').strip() + Style.RESET_ALL)
+                        print(
+                            Fore.WHITE + Style.DIM + "[SERIAL]:",
+                            line.decode("utf-8").strip() + Style.RESET_ALL,
+                        )
                     continue
-                request_id = message.get('id')
+                request_id = message.get("id")
                 if request_id is not None:
                     # If the message contains an id, look for a matching pending request.
                     with self.pending_lock:
                         pending = self.pending_requests.pop(request_id, None)
                     if pending:
                         event, response_container = pending
-                        response_container['response'] = message
+                        response_container["response"] = message
                         event.set()  # Unblock the waiting thread.
                     else:
                         # No pending request found; this might be an unsolicited response.
@@ -77,13 +84,13 @@ class SerialCommunicator:
             request_id = self.next_request_id
             self.next_request_id += 1
 
-        message = {'id': request_id, 'command': command}
+        message = {"id": request_id, "command": command}
         if params:
-            message['params'] = params
+            message["params"] = params
         message_str = json.dumps(message)
 
         # Write the message (terminated by a newline) to the serial port.
-        self.ser.write((message_str + "\n").encode('utf-8'))
+        self.ser.write((message_str + "\n").encode("utf-8"))
 
         # Create an event and container for the response.
         event = threading.Event()
@@ -96,7 +103,7 @@ class SerialCommunicator:
         # Wait for the event to be set by the reader thread.
         # You can adjust the timeout as needed.
         if event.wait(timeout):
-            return response_container['response']
+            return response_container["response"]
         else:
             # If no response arrives in time, remove the pending request and raise an error.
             with self.pending_lock:
@@ -105,10 +112,10 @@ class SerialCommunicator:
 
     def observe(self):
         return self.send_request("observe")
-    
+
     def step(self, action):
         return self.send_request("step", action=action)
-    
+
     def reset(self):
         return self.send_request("reset", timeout=30)
 
@@ -116,5 +123,3 @@ class SerialCommunicator:
         self.stop_event.set()
         self.reader_thread.join(timeout=2)
         self.ser.close()
-
-
