@@ -7,6 +7,9 @@
 #include "limit.h"
 #include "config.h"
 
+#define RESET_BIT	    BIT0
+#define RESET_CLEAR_BIT	BIT1
+
 // Shared data protection
 SemaphoreHandle_t dataMutex = xSemaphoreCreateMutex();
 
@@ -15,17 +18,12 @@ struct PendulumState {
     int32_t current_position = 0;
     int32_t target_position = 0;
     double theta = 0;
+    double velocity = 0;
     double angular_velocity = 0;
     bool limitL = false;
     bool limitR = false;
     bool enabled = true;
-    bool needs_reset = false;
-};
-
-enum class RequestType : int {
-    Observe = 0, 
-    Step = 1,
-    Reset = 2
+    bool resetting = false;
 };
 
 // Global state of the system
@@ -40,9 +38,6 @@ void DEBUG(const char* message, ...) {
     Serial.print("DEBUG: ");
     Serial.println(buffer);
 }
-
-#define RESET_BIT	    BIT0
-#define RESET_CLEAR_BIT	BIT1
 
 EventGroupHandle_t resetEventGroup = xEventGroupCreate();
 
@@ -60,58 +55,42 @@ void communicate(void* parameters) {
                 DEBUG("Failed to parse JSON: %s", error.c_str());
                 continue;
             }
-
-            JsonDocument response;
+            
             int id = request["id"];
             String command = String((const char *) request["command"]);
+            JsonDocument response;
             response["id"] = id;
+            response["status"] = "OK";
             
-            if (command == "observe") {
+            if (command == "sense") {
                 xSemaphoreTake(dataMutex, portMAX_DELAY);
-                response["status"] = "OK";
                 response["position"] = motorState.current_position;
+                response["velocity"] = motorState.velocity;
                 response["theta"] = motorState.theta;
                 response["angular_velocity"] = motorState.angular_velocity;
                 response["limitL"] = motorState.limitL;
                 response["limitR"] = motorState.limitR;
                 response["target"] = motorState.target_position;
                 response["enabled"] = motorState.enabled;
+                response["resetting"] = motorState.resetting;
                 xSemaphoreGive(dataMutex);
             }
-            else if (command == "step") {
+            else if (command == "move") {
                 int action = request["params"]["action"];
-                DEBUG("Step with action");
-                DEBUG("Step with action: %d", action);
-                DEBUG("Target position set to: %d", motorState.target_position);
+
                 xSemaphoreTake(dataMutex, portMAX_DELAY);
                 if (motorState.enabled) {
                     motorState.target_position += action;
                 }
-                DEBUG("Target position set to: %d", motorState.target_position);
-                response["status"] = motorState.enabled ? "OK" : "DISABLED";
-                response["position"] = motorState.current_position;
-                response["theta"] = motorState.theta;
-                response["angular_velocity"] = motorState.angular_velocity;
-                response["limitL"] = motorState.limitL;
-                response["limitR"] = motorState.limitR;
-                response["target"] = motorState.target_position;
-                response["enabled"] = motorState.enabled;
                 xSemaphoreGive(dataMutex);
+                continue;
             }
             else if (command == "reset") {
-                xEventGroupSync(resetEventGroup, RESET_BIT, RESET_CLEAR_BIT, portMAX_DELAY);
-                xEventGroupClearBits(resetEventGroup, RESET_CLEAR_BIT);
-
                 xSemaphoreTake(dataMutex, portMAX_DELAY);
-                response["status"] = "OK";
-                response["position"] = motorState.current_position;
-                response["theta"] = motorState.theta;
-                response["angular_velocity"] = motorState.angular_velocity;
-                response["limitL"] = motorState.limitL;
-                response["limitR"] = motorState.limitR;
-                response["target"] = motorState.target_position;
-                response["enabled"] = motorState.enabled;
+                motorState.resetting = true;
                 xSemaphoreGive(dataMutex);
+                xEventGroupSetBits(resetEventGroup, RESET_BIT);
+                continue;
             }
             else {
                 response["status"] = "ERROR";
@@ -121,6 +100,7 @@ void communicate(void* parameters) {
             serializeJson(response, Serial);
             Serial.println();
         }
+        
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
@@ -177,23 +157,20 @@ void act(void* parameters) {
         xSemaphoreTake(dataMutex, portMAX_DELAY);
         bool enabled = motorState.enabled;
         int32_t target = motorState.target_position;
-        bool needs_reset = motorState.needs_reset;
         bool limitStateL = motorState.limitL;
         bool limitStateR = motorState.limitR;
         xSemaphoreGive(dataMutex);
 
         if (limitStateL || limitStateR) {
-            // DEBUG("Limit switch triggered, disabling motor");
             digitalWrite(MOTOR_ENABLE_PIN, LOW);
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             motorState.enabled = false;
             xSemaphoreGive(dataMutex);
         }
 
-        if (xEventGroupGetBits(resetEventGroup) != 0) {
+        if (xEventGroupGetBits(resetEventGroup) & RESET_BIT) {
             stepper.setMaxSpeed(SAFE_SPEED);
             DEBUG("Motor reset requested");
-            
             DEBUG("Finding right limit switch");
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
             stepper.moveTo(-100000);
@@ -237,12 +214,9 @@ void act(void* parameters) {
             motorState.current_position = 0;
             motorState.target_position = 0;
             motorState.enabled = true;
-            motorState.needs_reset = false;
+            motorState.resetting = false;
             xSemaphoreGive(dataMutex);
-
-            xEventGroupSetBits(resetEventGroup, RESET_CLEAR_BIT);
             xEventGroupClearBits(resetEventGroup, RESET_BIT);
-
             continue;
         }
 
