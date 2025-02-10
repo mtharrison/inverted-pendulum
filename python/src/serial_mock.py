@@ -21,6 +21,9 @@ class MockSerialEndpoint:
             "enabled": False,
             "resetting": False,
         }
+        self.on_sense = on_sense
+        self.on_move = on_move
+        self.on_reset = on_reset
 
     def read_from_port(self):
         self.fd = os.open(self.port, os.O_RDWR | os.O_NOCTTY)
@@ -35,13 +38,11 @@ class MockSerialEndpoint:
             command = request["command"]
 
             if command == "sense":
-                response = {"status": "ok", **self.state, "id": id}
+                response = self.on_sense(self.state, request)
             elif command == "move":
-                self.state["target"] += request["params"]["distance"]
-                response = {"status": "ok", "id": id}
+                response = self.on_move(self.state, request)
             elif command == "reset":
-                self.state["resetting"] = True
-                response = {"status": "ok", "id": id}
+                response = self.on_reset(self.state, request)
             else:
                 response = {"id": id, "error": "Unknown command"}
 

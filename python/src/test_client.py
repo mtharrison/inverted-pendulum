@@ -3,9 +3,26 @@ from serial_virtual import VirtualSerialPair
 from serial_mock import MockSerialEndpoint
 
 
+def create_mock(port):
+    def on_sense(state, request):
+        return {"status": "ok", **state, "id": request["id"]}
+
+    def on_move(state, request):
+        state["target"] += request["params"]["distance"]
+        return {"status": "ok", "id": request["id"]}
+
+    def on_reset(state, request):
+        state["resetting"] = True
+        return {"status": "ok", "id": request["id"]}
+
+    return MockSerialEndpoint(
+        port=port, on_sense=on_sense, on_move=on_move, on_reset=on_reset
+    )
+
+
 def test_sense():
     virtual = VirtualSerialPair()
-    mock = MockSerialEndpoint(port=virtual.port1)
+    mock = create_mock(virtual.port1)
 
     client = SerialCommunicator(port=virtual.port2)
 
@@ -28,7 +45,7 @@ def test_sense():
 
 def test_unknown_command():
     virtual = VirtualSerialPair()
-    mock = MockSerialEndpoint(port=virtual.port1)
+    mock = create_mock(virtual.port1)
 
     client = SerialCommunicator(port=virtual.port2)
 
@@ -42,7 +59,7 @@ def test_unknown_command():
 
 def test_move():
     virtual = VirtualSerialPair()
-    mock = MockSerialEndpoint(port=virtual.port1)
+    mock = create_mock(virtual.port1)
 
     client = SerialCommunicator(port=virtual.port2)
 
@@ -60,7 +77,7 @@ def test_move():
 
 def test_reset():
     virtual = VirtualSerialPair()
-    mock = MockSerialEndpoint(port=virtual.port1)
+    mock = create_mock(virtual.port1)
 
     client = SerialCommunicator(port=virtual.port2)
 
