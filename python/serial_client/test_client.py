@@ -102,11 +102,11 @@ def test_sense():
     assert payload["velocity"] == 0
     assert payload["theta"] == 0
     assert payload["angular_velocity"] == 0
-    assert payload["limitL"] == False
-    assert payload["limitR"] == False
+    assert not payload["limitL"]
+    assert not payload["limitR"]
     assert payload["target"] == 0
-    assert payload["enabled"] == False
-    assert payload["resetting"] == False
+    assert not payload["enabled"]
+    assert not payload["resetting"]
 
     assert mock.requests[0]["command"] == "sense"
     assert mock.requests[0]["id"] == 1
@@ -158,4 +158,4 @@ def test_reset():
     assert mock.requests[0]["id"] == 1
 
     payload = client.sense()
-    assert payload["resetting"] == True
+    assert payload["resetting"]
