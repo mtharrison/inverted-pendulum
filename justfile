@@ -1,4 +1,4 @@
 gui:
-    cd python/gui && uv run main.py
+  (cd python/src && uv run watchgod gui.launch)
 dgui:
-    cd python && uv run watchgod gui/main.launch
+  (cd python/src && ENVIRONMENT=dev uv run watchgod gui.launch)
