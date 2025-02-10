@@ -10,5 +10,6 @@ dependencies = [
     "pyserial>=3.5",
     "pytest>=8.3.4",
     "ruff>=0.9.5",
+    "screeninfo>=0.8.1",
     "watchgod>=0.8.2",
 ]

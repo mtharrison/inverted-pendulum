@@ -41,8 +41,8 @@ void DEBUG(const char* message, ...) {
 EventGroupHandle_t resetEventGroup = xEventGroupCreate();
 
 void handle_move_command(int action) {
-    if(xSemaphoreTake(dataMutex, portMAX_DELAY)) {
-        if(motorState.enabled) {
+    if (xSemaphoreTake(dataMutex, portMAX_DELAY)) {
+        if (motorState.enabled) {
             motorState.target_position += action;
         }
         xSemaphoreGive(dataMutex);
@@ -55,7 +55,7 @@ void communicate(void* parameters) {
 
     for (;;) {
         if (Serial.available()) {
-            size_t len = Serial.readBytesUntil('\n', buffer, SERIAL_BUFFER_SIZE-1);
+            size_t len = Serial.readBytesUntil('\n', buffer, SERIAL_BUFFER_SIZE - 1);
             buffer[len] = '\0';
 
             DeserializationError error = deserializeJson(request, buffer);
@@ -63,13 +63,13 @@ void communicate(void* parameters) {
                 DEBUG("Failed to parse JSON: %s", error.c_str());
                 continue;
             }
-            
+
             int id = request["id"];
-            String command = String((const char *) request["command"]);
+            String command = String((const char*)request["command"]);
             JsonDocument response;
             response["id"] = id;
             response["status"] = "OK";
-            
+
             if (command == "sense") {
                 xSemaphoreTake(dataMutex, portMAX_DELAY);
                 response["position"] = motorState.current_position;
@@ -108,7 +108,7 @@ void communicate(void* parameters) {
             serializeJson(response, Serial);
             Serial.println();
         }
-        
+
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
@@ -138,11 +138,11 @@ void monitor(void* parameters) {
 
         int32_t encoderCount = encoder.getCount();
         float newTheta = encoderCount * ENCODER_TO_RAD;
-        
+
         if (dt > 0) {
             float velocity = (newTheta - motorState.theta) / dt;
-            filtered_velocity = VELOCITY_FILTER_ALPHA * velocity + 
-                              (1 - VELOCITY_FILTER_ALPHA) * filtered_velocity;
+            filtered_velocity = VELOCITY_FILTER_ALPHA * velocity +
+                (1 - VELOCITY_FILTER_ALPHA) * filtered_velocity;
         }
 
         xSemaphoreTake(dataMutex, portMAX_DELAY);
@@ -231,7 +231,7 @@ void act(void* parameters) {
         if (enabled) {
             stepper.moveTo(target);
             stepper.run();
-            
+
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             motorState.current_position = stepper.currentPosition();
             xSemaphoreGive(dataMutex);
@@ -246,12 +246,12 @@ void act(void* parameters) {
 void setup() {
     Serial.begin(115200);
 
-    xTaskCreatePinnedToCore(communicate, "Communicate", TASK_STACK_SIZE, NULL, 
-                           TASK_PRIORITY_COMMUNICATE, NULL, 1);
-    xTaskCreatePinnedToCore(monitor, "Monitor", TASK_STACK_SIZE, NULL, 
-                           TASK_PRIORITY_MONITOR, NULL, 1);
-    xTaskCreatePinnedToCore(act, "Act", TASK_STACK_SIZE, NULL, 
-                           TASK_PRIORITY_ACT, NULL, 1);
+    xTaskCreatePinnedToCore(communicate, "Communicate", TASK_STACK_SIZE, NULL,
+        TASK_PRIORITY_COMMUNICATE, NULL, 1);
+    xTaskCreatePinnedToCore(monitor, "Monitor", TASK_STACK_SIZE, NULL,
+        TASK_PRIORITY_MONITOR, NULL, 1);
+    xTaskCreatePinnedToCore(act, "Act", TASK_STACK_SIZE, NULL,
+        TASK_PRIORITY_ACT, NULL, 1);
 }
 
 void loop() {
