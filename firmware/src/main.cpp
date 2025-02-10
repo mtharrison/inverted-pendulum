@@ -6,7 +6,6 @@
 #include "freertos/semphr.h"
 #include "limit.h"
 #include "config.h"
-#include "main.h"
 
 #define RESET_BIT	    BIT0
 #define RESET_CLEAR_BIT	BIT1
