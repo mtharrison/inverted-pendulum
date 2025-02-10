@@ -2,7 +2,7 @@ import math
 from time import perf_counter
 import threading
 import random
-
+import os
 import dearpygui.dearpygui as dpg
 
 from serial_client import SerialCommunicator
@@ -442,37 +442,41 @@ class PendulumVisualizerDPG:
 def launch():
     for m in get_monitors():
         monitor = m
+    print(os.getenv("ENVIRONMENT"))
+    if os.getenv("ENVIRONMENT") == "dev":
 
-    position = 0
+        def on_sense(state, request):
+            global position
+            state["theta"] += 0.01
+            state["angular_velocity"] = random.uniform(-1, 1)
+            state["position"] = math.cos(state['theta']) * 1000
+            state["velocity"] = random.uniform(-1, 1)
+            state["limitL"] = True if random.uniform(-1, 1) < 0 else False
+            state["limitR"] = True if random.uniform(-1, 1) < 0 else False
+            state["enabled"] = True if random.uniform(-1, 1) < 0 else False
+            state["resetting"] = False
+            state["extents"] = 1000
 
-    def on_sense(state, request):
-        global position
-        state["theta"] += 0.01
-        state["angular_velocity"] = random.uniform(-1, 1)
-        state["position"] = math.cos(state['theta']) * 1000
-        state["velocity"] = random.uniform(-1, 1)
-        state["limitL"] = True if random.uniform(-1, 1) < 0 else False
-        state["limitR"] = True if random.uniform(-1, 1) < 0 else False
-        state["enabled"] = True if random.uniform(-1, 1) < 0 else False
-        state["resetting"] = False
-        state["extents"] = 1000
+            return {"status": "OK", **state, "id": request["id"]}
 
-        return {"status": "OK", **state, "id": request["id"]}
+        def on_move(state, request):
+            state["target"] += request["params"]["distance"]
+            return {"status": "OK", "id": request["id"]}
 
-    def on_move(state, request):
-        state["target"] += request["params"]["distance"]
-        return {"status": "OK", "id": request["id"]}
+        def on_reset(state, request):
+            state["resetting"] = True
+            return {"status": "OK", "id": request["id"], "resetting": True}
 
-    def on_reset(state, request):
-        state["resetting"] = True
-        return {"status": "OK", "id": request["id"], "resetting": True}
+        with VirtualSerialPair() as (port1, port2):
+            MockSerialEndpoint(
+                port=port1, on_sense=on_sense, on_move=on_move, on_reset=on_reset
+            )
 
-    with VirtualSerialPair() as (port1, port2):
-        MockSerialEndpoint(
-            port=port1, on_sense=on_sense, on_move=on_move, on_reset=on_reset
-        )
+            visualizer = PendulumVisualizerDPG(monitor, port2)
+            visualizer.run()
 
-        visualizer = PendulumVisualizerDPG(monitor, port2)
+    else:
+        visualizer = PendulumVisualizerDPG(monitor)
         visualizer.run()
 
 

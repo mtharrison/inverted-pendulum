@@ -1,2 +1,6 @@
 test:
   uv run pytest -s
+gui:
+  (cd src && uv run watchgod gui.launch)
+dgui:
+  (cd src && ENVIRONMENT=dev uv run watchgod gui.launch)
