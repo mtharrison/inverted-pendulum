@@ -317,12 +317,18 @@ class PendulumVisualizerDPG:
         Also draws the limit switch indicators.
         """
 
+        min_x_pos = 100
+        max_x_pos = self.pendulum_window_width - 100
+        extents = self.state['extents']
+        position = self.state['position']
+        pendulum_offset_from_center = (position / extents) *( (max_x_pos - min_x_pos - 90) / 2)
+
         # Remove any previous drawings
         dpg.delete_item(self.pendulum_drawlist, children_only=True)
 
         # Define the pivot and rod length (same as the pygame version)
-        pivot = (self.pendulum_window_width // 2, self.pendulum_drawing_height // 2 - 10)
-        rod_length = 150
+        pivot = (self.pendulum_window_width // 2 + pendulum_offset_from_center, self.pendulum_drawing_height // 2)
+        rod_length = 180
         bob_x = pivot[0] + rod_length * math.sin(-self.state['theta'])
         bob_y = pivot[1] + rod_length * math.cos(self.state['theta'])
 
@@ -345,13 +351,13 @@ class PendulumVisualizerDPG:
         )
 
         cart_position_origin = (
-            self.pendulum_window_width // 2,
+            self.pendulum_window_width // 2 + pendulum_offset_from_center,
             self.pendulum_drawing_height // 2,
         )
 
-        dpg.draw_rectangle(
-            pmin=(cart_position_origin[0] - 30, cart_position_origin[1] - 40),
-            pmax=(cart_position_origin[0] + 30, cart_position_origin[1]),
+        dpg.draw_circle(
+            center=cart_position_origin,
+            radius=10,
             color=[255, 255, 255, 255],
             fill=[255, 255, 255, 255],
             parent=self.pendulum_drawlist,
@@ -385,10 +391,9 @@ class PendulumVisualizerDPG:
         dpg.draw_circle(
             center=position, radius=20, color=color, fill=color, parent=parent
         )
-        state = "TRIGGERED" if triggered else ""
-        text = f"{label} {state}"
+        text = f"{label}"
         # Offset the text so that it appears below the circle.
-        text_position = (position[0] - 20, position[1] - 50)
+        text_position = (position[0] - 20, position[1] + 40 )
         dpg.draw_text(
             pos=text_position,
             text=text,
