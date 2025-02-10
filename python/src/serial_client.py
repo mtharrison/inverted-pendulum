@@ -43,7 +43,7 @@ class SerialCommunicator:
         while True:
             if time.time() - start_time > timeout:
                 raise TimeoutError(
-                    f"Command {command} timed out after {timeout} seconds"
+                    f"Command {command} timed out after {timeout} seconds for {request_id}"
                 )
 
             # Read all available data

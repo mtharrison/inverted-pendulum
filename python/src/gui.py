@@ -46,10 +46,6 @@ class PendulumVisualizerDPG:
 
         # Initialize serial communicator with callbacks
         self.serial = SerialCommunicator(port)
-        self.request_new_data = True  # Flag to control data requests
-
-        # Start the observation loop
-        self.start_observation_loop()
 
         # Initialize Dear PyGui (rest of the GUI initialization remains the same)
 
@@ -60,10 +56,6 @@ class PendulumVisualizerDPG:
         dpg.create_viewport(
             title="Pendulum Visualizer", width=self.width, height=self.height
         )
-
-        # Register a key-press handler
-        with dpg.handler_registry():
-            dpg.add_key_press_handler(callback=self.handle_key_press)
 
         # Create a window for the pendulum drawing.
         # (We use a drawlist as our canvas.)
@@ -258,16 +250,16 @@ class PendulumVisualizerDPG:
 
                             dpg.bind_item_handler_registry("Btn2", "reset handler")
 
-                        dpg.add_slider_double(
-                            width=400,
-                            label="manual cart position",
-                            max_value=1000,
-                            min_value=-1000,
-                            format="position = %.14f",
-                            callback=lambda sender, app_data: self.serial.step(
-                                app_data, self.handle_step_response
-                            ),
-                        )
+                        # dpg.add_slider_double(
+                        #     width=400,
+                        #     label="manual cart position",
+                        #     max_value=1000,
+                        #     min_value=-1000,
+                        #     format="position = %.14f",
+                        #     callback=lambda sender, app_data: self.serial.step(
+                        #         app_data, self.handle_step_response
+                        #     ),
+                        # )
 
                 with dpg.table_row():
                     with dpg.group(tag="episode stats", horizontal=True):
@@ -309,22 +301,8 @@ class PendulumVisualizerDPG:
         """Return an angle in the range [0, 2π)."""
         return angle % (2 * math.pi)
 
-    def start_observation_loop(self):
-        """Start a background thread to continuously request observations"""
-
-        def observation_loop():
-            while self.running:
-                if self.request_new_data:
-                    self.serial.observe(self.handle_observation)
-                    self.request_new_data = False
-                time.sleep(0.016)  # Match GUI update rate
-
-        self.observer_thread = threading.Thread(target=observation_loop, daemon=True)
-        self.observer_thread.start()
-
-    def handle_observation(self, data):
-        """Callback for handling observation data"""
-        self.request_new_data = True  # Allow requesting new data
+    def get_observation(self):
+        data = self.serial.sense()
 
         if data is None:  # Timeout occurred
             return
@@ -345,49 +323,15 @@ class PendulumVisualizerDPG:
                 -self.velocity_chart_width :
             ]
 
-    def handle_step_response(self, response):
-        """Callback for handling step responses"""
-        if response is None:  # Timeout occurred
-            print("Step command timed out")
-            return
-
-        if response.get("status") == "OK":
-            self.request_new_data = True  # Resume observations
-
-    def handle_reset_response(self, response):
-        """Callback for handling reset responses"""
-        if response is None:  # Timeout occurred
-            print("Reset command timed out")
-            return
-
-        if response.get("status") == "OK":
-            self.angle_history.clear()
-            self.angular_velocity_history.clear()
-            self.position_history.clear()
-            self.velocity_history.clear()
-            self.request_new_data = True  # Resume observations
-
-    def handle_key_press(self, sender, app_data):
-        """Handle key press events with callbacks"""
-        step = 0
-        if app_data == 263:  # left arrow key
-            step = -1
-        elif app_data == 262:  # right arrow key
-            step = 1
-
-        if step != 0:
-            self.request_new_data = False  # Pause observations
-            self.serial.step(step, self.handle_step_response)
-
     def reset(self, sender, app_data):
         """Handle reset button press with callback"""
-        self.request_new_data = False  # Pause observations
-        self.serial.reset(self.handle_reset_response)
+        self.serial.reset()
 
     def update(self):
         """Update GUI elements"""
         now = perf_counter()
         if now - self.last_update >= self.update_interval:
+            self.get_observation()
             self.draw_pendulum()
             self.update_charts()
             self.last_update = now
@@ -400,7 +344,6 @@ class PendulumVisualizerDPG:
 
         # Cleanup
         self.running = False
-        self.observer_thread.join(timeout=1)
         self.serial.close()
         dpg.destroy_context()
 
@@ -515,15 +458,32 @@ class PendulumVisualizerDPG:
         dpg.set_axis_limits(self.angular_velocity_y_axis, -40, 40)
 
 
+def on_sense(state, request):
+    state["theta"] += 0.01
+    return {"status": "OK", **state, "id": request["id"]}
+
+
+def on_move(state, request):
+    state["target"] += request["params"]["distance"]
+    return {"status": "OK", "id": request["id"]}
+
+
+def on_reset(state, request):
+    state["resetting"] = True
+    return {"status": "OK", "id": request["id"]}
+
+
 def launch():
     for m in get_monitors():
         monitor = m
 
-    virtual = VirtualSerialPair()
-    MockSerialEndpoint(port=virtual.port1)
+    with VirtualSerialPair() as (port1, port2):
+        MockSerialEndpoint(
+            port=port1, on_sense=on_sense, on_move=on_move, on_reset=on_reset
+        )
 
-    visualizer = PendulumVisualizerDPG(monitor, virtual.port2)
-    visualizer.run()
+        visualizer = PendulumVisualizerDPG(monitor, port2)
+        visualizer.run()
 
 
 if __name__ == "__main__":

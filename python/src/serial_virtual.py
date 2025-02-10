@@ -1,9 +1,13 @@
 import re
 import subprocess
+import threading
 
 
 class VirtualSerialPair:
     def __init__(self):
+        pass
+
+    def __enter__(self):
         self.proc = subprocess.Popen(
             ["socat", "-d", "-d", "pty,raw,echo=0", "pty,raw,echo=0"],
             stdout=subprocess.PIPE,
@@ -30,5 +34,18 @@ class VirtualSerialPair:
         self.port1 = ports[0]
         self.port2 = ports[1]
 
-    def __del__(self):
+        self.stop = False
+
+        self.thread = threading.Thread(target=self.drain)
+        self.thread.start()
+
+        return (self.port1, self.port2)
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.stop = True
         self.proc.kill()
+        self.thread.join()
+
+    def drain(self):
+        while not self.stop:
+            self.proc.stderr.read(64)

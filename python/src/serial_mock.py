@@ -27,27 +27,37 @@ class MockSerialEndpoint:
 
     def read_from_port(self):
         self.fd = os.open(self.port, os.O_RDWR | os.O_NOCTTY)
+        buffer = b""
         while not self.stop:
-            data = os.read(self.fd, 1024)
-            if not data:
-                break
+            try:
+                data = os.read(self.fd, 1)
+                buffer += data
+                if not data:
+                    break
 
-            request = json.loads(data.decode("utf-8"))
-            self.requests.append(request)
-            id = request["id"]
-            command = request["command"]
+                if b"\n" not in buffer:
+                    continue
 
-            if command == "sense":
-                response = self.on_sense(self.state, request)
-            elif command == "move":
-                response = self.on_move(self.state, request)
-            elif command == "reset":
-                response = self.on_reset(self.state, request)
-            else:
-                response = {"id": id, "error": "Unknown command"}
+                request = json.loads(buffer)
+                buffer = b""
+                self.requests.append(request)
+                self.requests = self.requests[-10:]
+                id = request["id"]
+                command = request["command"]
 
-            response_str = json.dumps(response) + "\n"
-            os.write(self.fd, response_str.encode("utf-8"))
+                if command == "sense":
+                    response = self.on_sense(self.state, request)
+                elif command == "move":
+                    response = self.on_move(self.state, request)
+                elif command == "reset":
+                    response = self.on_reset(self.state, request)
+                else:
+                    response = {"id": id, "error": "Unknown command"}
+
+                response_str = json.dumps(response) + "\n"
+                os.write(self.fd, response_str.encode("utf-8"))
+            except Exception as e:
+                print(f"Error: {e}")
 
         os.close(self.fd)
 
