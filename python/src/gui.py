@@ -39,7 +39,8 @@ class PendulumVisualizerDPG:
         # History for charts
         self.angle_history = []
         self.angular_velocity_history = []
-        self.position_history = []
+        self.current_position_history = []
+        self.target_position_history = []
         self.velocity_history = []
 
         dpg.create_context()
@@ -64,6 +65,17 @@ class PendulumVisualizerDPG:
             height=self.viewport_height,
             width=self.viewport_width // 2,
         ):
+            dpg.add_slider_double(
+                width=400,
+                pos=(10, 30),
+                tag="cart_position_slider",
+                max_value=1000,
+                min_value=-1000,
+                format="position = %.14f",
+                callback=lambda sender, app_data: self.move(
+                    app_data - self.state["current_position"]
+                ),
+            )
             with dpg.table(
                 tag="pendulum_table",
                 header_row=False,
@@ -177,7 +189,8 @@ class PendulumVisualizerDPG:
                                 height=self.pendulum_chart_height,
                             ):
                                 dpg.add_text(
-                                    default_value="Position: 0", tag="position_text"
+                                    default_value="Position: 0",
+                                    tag="current_position_text",
                                 )
                                 with dpg.plot(
                                     label="Position",
@@ -185,17 +198,24 @@ class PendulumVisualizerDPG:
                                     width=-1,
                                 ):
                                     dpg.add_plot_legend()
-                                    self.position_x_axis = dpg.add_plot_axis(
+                                    self.current_position_x_axis = dpg.add_plot_axis(
                                         dpg.mvXAxis, label="Time", auto_fit=True
                                     )
-                                    self.position_y_axis = dpg.add_plot_axis(
+                                    self.current_position_y_axis = dpg.add_plot_axis(
                                         dpg.mvYAxis, label="Position", auto_fit=True
                                     )
-                                    self.position_series = dpg.add_line_series(
+                                    self.current_position_series = dpg.add_line_series(
                                         [],
                                         [],
                                         label="Position",
-                                        parent=self.position_y_axis,
+                                        parent=self.current_position_y_axis,
+                                    )
+
+                                    self.target_position_series = dpg.add_line_series(
+                                        [],
+                                        [],
+                                        label="Target Position",
+                                        parent=self.current_position_y_axis,
                                     )
 
                             with dpg.child_window(
@@ -259,17 +279,6 @@ class PendulumVisualizerDPG:
 
                             dpg.bind_item_handler_registry("Btn2", "reset handler")
 
-                        # dpg.add_slider_double(
-                        #     width=400,
-                        #     label="manual cart position",
-                        #     max_value=1000,
-                        #     min_value=-1000,
-                        #     format="position = %.14f",
-                        #     callback=lambda sender, app_data: self.serial.step(
-                        #         app_data, self.handle_step_response
-                        #     ),
-                        # )
-
                 with dpg.table_row():
                     with dpg.group(tag="episode stats", horizontal=True):
                         dpg.add_text("Episode: 0/100", tag="episode_text")
@@ -303,12 +312,17 @@ class PendulumVisualizerDPG:
 
                 self.angle_history.append(self.continuous_angle(self.state["theta"]))
                 self.angular_velocity_history.append(self.state["angular_velocity"])
-                self.position_history.append(self.state["position"])
+                self.current_position_history.append(self.state["current_position"])
+                self.target_position_history.append(self.state["target_position"])
                 self.velocity_history.append(self.state["velocity"])
 
     def reset(self, sender, app_data):
         with self.serial_lock:
             self.serial.reset()
+
+    def move(self, distance):
+        with self.serial_lock:
+            self.serial.move(distance)
 
     def update(self):
         """Update the pendulum and charts with the latest data."""
@@ -339,8 +353,8 @@ class PendulumVisualizerDPG:
         min_x_pos = 100
         max_x_pos = self.pendulum_window_width - 100
         extents = self.state["extents"]
-        position = self.state["position"]
-        pendulum_offset_from_center = (position / extents) * (
+        current_position = self.state["current_position"]
+        pendulum_offset_from_center = (current_position / extents) * (
             (max_x_pos - min_x_pos - 90) / 2
         )
 
@@ -458,16 +472,26 @@ class PendulumVisualizerDPG:
         )
 
         # Update position chart data
-        x_data_pos = list(range(len(self.position_history)))[-number_of_points:]
-        y_data_pos = self.position_history[-number_of_points:]
-        dpg.set_value(self.position_series, [x_data_pos, y_data_pos])
-        dpg.set_value("position_text", f"Position: {self.state['position']:.2f}")
+        x_data_pos = list(range(len(self.current_position_history)))[-number_of_points:]
+        y_data_pos = self.current_position_history[-number_of_points:]
+        dpg.set_value(self.current_position_series, [x_data_pos, y_data_pos])
+        dpg.set_value(
+            "current_position_text", f"Position: {self.state['current_position']:.2f}"
+        )
+
+        x_data_target = list(range(len(self.target_position_history)))[
+            -number_of_points:
+        ]
+        y_data_target = self.target_position_history[-number_of_points:]
+        dpg.set_value(self.target_position_series, [x_data_target, y_data_target])
 
         # Update velocity chart data
         x_data_vel = list(range(len(self.velocity_history)))[-number_of_points:]
         y_data_vel = self.velocity_history[-number_of_points:]
         dpg.set_value(self.velocity_series, [x_data_vel, y_data_vel])
         dpg.set_value("velocity_text", f"Velocity: {self.state['velocity']:.2f}")
+
+        dpg.set_value("cart_position_slider", self.state["current_position"])
 
 
 def launch():
@@ -477,10 +501,10 @@ def launch():
     if os.getenv("ENVIRONMENT") == "dev":
 
         def on_sense(state, request):
-            global position
             state["theta"] += 0.01
             state["angular_velocity"] = random.uniform(-1, 1)
-            state["position"] = math.cos(state["theta"]) * 1000
+            state["current_position"] = math.cos(state["theta"]) * 1000
+            state["target_position"] = (math.cos(state["theta"]) * 1000) + 200
             state["velocity"] = random.uniform(-1, 1)
             state["limitL"] = False
             state["limitR"] = False
