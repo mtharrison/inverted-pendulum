@@ -1,5 +1,6 @@
 import math
 from time import perf_counter
+import threading
 
 import dearpygui.dearpygui as dpg
 
@@ -13,7 +14,8 @@ FRAMES_PER_SECOND = 60
 
 class PendulumVisualizerDPG:
     def __init__(self, monitor, port="/dev/cu.usbmodem2101"):
-        # Initialize serial communicator
+        # Initialize serial communicator and lock
+        self.serial_lock = threading.Lock()
         self.serial = SerialCommunicator(port)
 
         initial_state = self.serial.sense()
@@ -271,21 +273,23 @@ class PendulumVisualizerDPG:
         return angle % (2 * math.pi)
 
     def get_observation(self):
-        data = self.serial.sense()
+        with self.serial_lock:
+            data = self.serial.sense()
 
-        if data.get("status") == "OK":
-            self.angle = data.get("theta", 0)
-            self.angular_velocity = data.get("angular_velocity", 0)
-            self.limitL = data.get("limitL", False)
-            self.limitR = data.get("limitR", False)
+            if data.get("status") == "OK":
+                self.angle = data.get("theta", 0)
+                self.angular_velocity = data.get("angular_velocity", 0)
+                self.limitL = data.get("limitL", False)
+                self.limitR = data.get("limitR", False)
 
-            # Update history lists
-            self.angle_history.append(self.continuous_angle(self.angle))
-            self.angular_velocity_history.append(self.angular_velocity)
+                # Update history lists
+                self.angle_history.append(self.continuous_angle(self.angle))
+                self.angular_velocity_history.append(self.angular_velocity)
 
     def reset(self, sender, app_data):
         """Handle reset button press with callback"""
-        self.serial.reset()
+        with self.serial_lock:
+            self.serial.reset()
 
     def update(self):
         """Update GUI elements"""
@@ -432,7 +436,7 @@ def launch():
 
     def on_reset(state, request):
         state["resetting"] = True
-        return {"status": "OK", "id": request["id"]}
+        return {"status": "OK", "id": request["id"], "resetting": True}
 
     with VirtualSerialPair() as (port1, port2):
         MockSerialEndpoint(
