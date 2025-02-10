@@ -20,6 +20,7 @@ struct PendulumState {
     bool limitR = false;
     bool enabled = true;
     bool resetting = false;
+    long extent = 0;
 };
 
 // Shared data protection
@@ -81,6 +82,7 @@ void communicate(void* parameters) {
                 response["target"] = motorState.target_position;
                 response["enabled"] = motorState.enabled;
                 response["resetting"] = motorState.resetting;
+                response["extent"] = motorState.extent;
                 xSemaphoreGive(dataMutex);
             }
             else if (command == "move") {
@@ -223,6 +225,7 @@ void act(void* parameters) {
             motorState.target_position = 0;
             motorState.enabled = true;
             motorState.resetting = false;
+            motorState.extent = abs(center - leftPosition);
             xSemaphoreGive(dataMutex);
             xEventGroupClearBits(resetEventGroup, RESET_BIT);
             continue;
