@@ -1,6 +1,4 @@
 import math
-import threading
-import time
 from time import perf_counter
 
 import dearpygui.dearpygui as dpg
@@ -10,25 +8,26 @@ from serial_mock import MockSerialEndpoint
 from serial_virtual import VirtualSerialPair
 from screeninfo import get_monitors
 
+MARGIN_AROUND_VIEWPORT = 200
+FRAMES_PER_SECOND = 60
 
 class PendulumVisualizerDPG:
     def __init__(self, monitor, port="/dev/cu.usbmodem2101"):
-        # Window and update parameters
-        margin = 200
-        self.width = monitor.width - margin
-        self.height = monitor.height - margin
-        self.update_interval = 0.016  # ~60 Hz
-        self.velocity_scale = 40
-        pend_chart_height = 280
-        self.pendulum_window_width = self.width / 2
-        self.pend_drawlist_height = self.height - (2 * pend_chart_height) - 55
+        # Initialize serial communicator
+        self.serial = SerialCommunicator(port)
+
+        initial_state = self.serial.sense()
+        self.state = initial_state
+
+        # Sizes
+        self.viewport_width = monitor.width - MARGIN_AROUND_VIEWPORT
+        self.viewport_height = monitor.height - MARGIN_AROUND_VIEWPORT
+        self.update_interval = 1/FRAMES_PER_SECOND
+        self.pendulum_drawing_height = self.viewport_height //2.5
+        self.pendulum_window_width = self.viewport_width // 2
+        self.pendulum_chart_height = ((self.viewport_height - self.pendulum_drawing_height) // 2) - 27
 
         # Pendulum and state variables
-        self.angle = 0.0
-        self.angular_velocity = 0.0
-        self.limitL = False
-        self.limitR = False
-        self.running = True
         self.last_update = perf_counter()
 
         # History for charts
@@ -37,59 +36,48 @@ class PendulumVisualizerDPG:
         self.position_history = []
         self.velocity_history = []
 
-        # Chart sizes
-        self.angle_chart_width = round(self.width / 2) - 30
-        self.angle_chart_height = round(self.height / 2) - 50
-        self.velocity_chart_width = round(self.width / 2) - 30
-        self.velocity_chart_height = round(self.height / 2) - 50
-        self.pendulum_width = self.width / 2
-
-        # Initialize serial communicator with callbacks
-        self.serial = SerialCommunicator(port)
-
-        # Initialize Dear PyGui (rest of the GUI initialization remains the same)
-
-        # ---------------------
-        # Initialize Dear PyGui
-        # ---------------------
         dpg.create_context()
         dpg.create_viewport(
-            title="Pendulum Visualizer", width=self.width, height=self.height
+            title="Pendulum Visualizer", width=self.viewport_width, height=self.viewport_height
         )
 
-        # Create a window for the pendulum drawing.
-        # (We use a drawlist as our canvas.)
+        self.init_pendulum_window()
+        self.init_training_window()
+
+        dpg.setup_dearpygui()
+        dpg.show_viewport()
+        dpg.set_viewport_pos([0, 0])
+
+    def init_pendulum_window(self):
         with dpg.window(
-            label="Pendulum Visualization",
+            label="pendulum_window",
             pos=(0, 0),
-            height=self.height,
-            width=self.width // 2,
+            height=self.viewport_height,
+            width=self.viewport_width // 2,
         ):
             with dpg.table(
-                tag="main",
+                tag="pendulum_table",
                 header_row=False,
                 borders_innerH=False,
                 borders_outerH=False,
-                borders_innerV=True,
+                borders_innerV=False,
                 borders_outerV=False,
             ):
                 dpg.add_table_column()
 
-                # Pendulum drawlist and charts
-
                 with dpg.table_row():
                     self.pendulum_drawlist = dpg.add_drawlist(
                         width=self.pendulum_window_width,
-                        height=self.pend_drawlist_height,
+                        height=self.pendulum_drawing_height,
                     )
 
                 with dpg.table_row():
                     with dpg.table(
-                        tag="pend_plots_first",
+                        tag="pendulum_plots_first",
                         header_row=False,
                         borders_innerH=False,
                         borders_outerH=False,
-                        borders_innerV=True,
+                        borders_innerV=False,
                         borders_outerV=False,
                     ):
                         dpg.add_table_column()
@@ -97,14 +85,13 @@ class PendulumVisualizerDPG:
 
                         with dpg.table_row():
                             with dpg.child_window(
-                                label="Angle Chart", width=-1, height=pend_chart_height
+                                label="angle_chart", width=-1, height=self.pendulum_chart_height
                             ):
-                                # A text widget to display the current angle.
                                 dpg.add_text(
                                     default_value="Angle: 0.00 rad", tag="angle_text"
                                 )
                                 with dpg.plot(
-                                    label="Angle Chart",
+                                    label="Angle",
                                     height=-1,
                                     width=-1,
                                 ):
@@ -113,23 +100,23 @@ class PendulumVisualizerDPG:
                                         dpg.mvXAxis, label="Time", auto_fit=True
                                     )
                                     self.angle_y_axis = dpg.add_plot_axis(
-                                        dpg.mvYAxis, label="Sine(angle)"
+                                        dpg.mvYAxis, label="Sin(angle)", auto_fit=True
                                     )
                                     self.angle_series = dpg.add_line_series(
                                         [], [], label="Angle", parent=self.angle_y_axis
                                     )
 
                             with dpg.child_window(
-                                label="Angular Velocity Chart",
+                                label="angular_velocity_chart",
                                 width=-1,
-                                height=pend_chart_height,
+                                height=self.pendulum_chart_height,
                             ):
                                 dpg.add_text(
                                     default_value="Angular Velocity: 0.00 rad/s",
                                     tag="ang_velocity_text",
                                 )
                                 with dpg.plot(
-                                    label="Angular Velocity Chart",
+                                    label="Angular Velocity",
                                     height=-1,
                                     width=-1,
                                 ):
@@ -149,29 +136,27 @@ class PendulumVisualizerDPG:
 
                 with dpg.table_row():
                     with dpg.table(
-                        tag="pend_plots_second",
+                        tag="pendulum_plots_second",
                         header_row=False,
                         borders_innerH=False,
                         borders_outerH=False,
-                        borders_innerV=True,
+                        borders_innerV=False,
                         borders_outerV=False,
                     ):
                         dpg.add_table_column()
                         dpg.add_table_column()
 
                         with dpg.table_row():
-                            # Create a window for the Angle Chart.
                             with dpg.child_window(
-                                label="Position Chart",
+                                label="position_chart",
                                 width=-1,
-                                height=pend_chart_height,
+                                height=self.pendulum_chart_height,
                             ):
-                                # A text widget to display the current angle.
                                 dpg.add_text(
                                     default_value="Position: 0", tag="position_text"
                                 )
                                 with dpg.plot(
-                                    label="Position Chart",
+                                    label="Position",
                                     height=-1,
                                     width=-1,
                                 ):
@@ -190,16 +175,15 @@ class PendulumVisualizerDPG:
                                     )
 
                             with dpg.child_window(
-                                label="Velocity Chart",
+                                label="velocity_chart",
                                 width=-1,
-                                height=pend_chart_height,
+                                height=self.pendulum_chart_height,
                             ):
-                                # A text widget to display the current angle.
                                 dpg.add_text(
                                     default_value="Velocity: 0", tag="velocity_text"
                                 )
                                 with dpg.plot(
-                                    label="Velocity Chart",
+                                    label="Velocity",
                                     height=-1,
                                     width=-1,
                                 ):
@@ -217,27 +201,26 @@ class PendulumVisualizerDPG:
                                         parent=self.velocity_y_axis,
                                     )
 
-        # Create a window for the pendulum drawing.
-        # (We use a drawlist as our canvas.)
+    def init_training_window(self):
         with dpg.window(
-            label="Training",
-            pos=(self.width // 2, 0),
-            height=self.height,
-            width=self.width // 2,
+            label="training_window",
+            pos=(self.viewport_width // 2, 0),
+            height=self.viewport_height,
+            width=self.viewport_width // 2,
         ):
             with dpg.table(
                 tag="training_table",
                 header_row=False,
                 borders_innerH=False,
                 borders_outerH=False,
-                borders_innerV=True,
+                borders_innerV=False,
                 borders_outerV=False,
             ):
                 dpg.add_table_column()
 
                 with dpg.table_row():
                     with dpg.group(
-                        tag="button group", horizontal=True, horizontal_spacing=100
+                        tag="training_button_group", horizontal=True, horizontal_spacing=100
                     ):
                         with dpg.group(tag="button group sub", horizontal=True):
                             dpg.add_button(tag="Btn1", label="START TRAINING")
@@ -263,18 +246,18 @@ class PendulumVisualizerDPG:
 
                 with dpg.table_row():
                     with dpg.group(tag="episode stats", horizontal=True):
-                        dpg.add_text("Episode: 0/100")
-                        dpg.add_text("Reward: 0")
-                        dpg.add_text("Epsilon: 0")
-                        dpg.add_text("Loss: 0")
-                        dpg.add_text("Steps: 0")
-                        dpg.add_text("Time: 0")
-                        dpg.add_text("Total time: 0")
+                        dpg.add_text("Episode: 0/100", tag="episode_text")
+                        dpg.add_text("Reward: 0", tag="reward_text")
+                        dpg.add_text("Epsilon: 0", tag="epsilon_text")
+                        dpg.add_text("Loss: 0", tag="loss_text")
+                        dpg.add_text("Steps: 0", tag="steps_text")
+                        dpg.add_text("Time: 0", tag="time_text")
+                        dpg.add_text("Total time: 0", tag="total_time_text")
 
                 with dpg.table_row():
                     # Add reward vs episode plot
                     with dpg.child_window(
-                        label="Reward vs Episode", width=-1, height=-1
+                        label="training_chart", width=-1, height=-1
                     ):
                         with dpg.plot(
                             label="Reward vs Episode",
@@ -283,29 +266,12 @@ class PendulumVisualizerDPG:
                         ):
                             pass
 
-            # The drawlist acts as our drawing canvas.
-
-        dpg.setup_dearpygui()
-
-        # demo.show_demo()
-
-        # dpg.show_style_editor()
-
-        # dpg.show_item_registry()
-
-        dpg.show_viewport()
-
-        dpg.set_viewport_pos([0, 0])
-
     def continuous_angle(self, angle):
         """Return an angle in the range [0, 2π)."""
         return angle % (2 * math.pi)
 
     def get_observation(self):
         data = self.serial.sense()
-
-        if data is None:  # Timeout occurred
-            return
 
         if data.get("status") == "OK":
             self.angle = data.get("theta", 0)
@@ -316,12 +282,6 @@ class PendulumVisualizerDPG:
             # Update history lists
             self.angle_history.append(self.continuous_angle(self.angle))
             self.angular_velocity_history.append(self.angular_velocity)
-
-            # Trim histories to chart width
-            self.angle_history = self.angle_history[-self.angle_chart_width :]
-            self.angular_velocity_history = self.angular_velocity_history[
-                -self.velocity_chart_width :
-            ]
 
     def reset(self, sender, app_data):
         """Handle reset button press with callback"""
@@ -357,7 +317,7 @@ class PendulumVisualizerDPG:
         dpg.delete_item(self.pendulum_drawlist, children_only=True)
 
         # Define the pivot and rod length (same as the pygame version)
-        pivot = (self.pendulum_width // 2, self.pend_drawlist_height // 2 - 10)
+        pivot = (self.pendulum_window_width // 2, self.pendulum_drawing_height // 2 - 10)
         rod_length = 150
         bob_x = pivot[0] + rod_length * math.sin(-self.angle)
         bob_y = pivot[1] + rod_length * math.cos(self.angle)
@@ -381,8 +341,8 @@ class PendulumVisualizerDPG:
         )
 
         cart_position_origin = (
-            self.pendulum_width // 2,
-            self.pend_drawlist_height // 2,
+            self.pendulum_window_width // 2,
+            self.pendulum_drawing_height // 2,
         )
 
         dpg.draw_rectangle(
@@ -394,8 +354,8 @@ class PendulumVisualizerDPG:
         )
 
         dpg.draw_line(
-            p1=(100, self.pend_drawlist_height // 2),
-            p2=(self.pendulum_width - 100, self.pend_drawlist_height // 2),
+            p1=(100, self.pendulum_drawing_height // 2),
+            p2=(self.pendulum_window_width - 100, self.pendulum_drawing_height // 2),
             color=[255, 255, 255, 255],
             thickness=1,
             parent=self.pendulum_drawlist,
@@ -403,13 +363,13 @@ class PendulumVisualizerDPG:
 
         # Draw limit switch indicators at fixed positions
         self.draw_limit(
-            (100, self.pend_drawlist_height // 2),
+            (100, self.pendulum_drawing_height // 2),
             self.limitL,
             "LIMIT",
             parent=self.pendulum_drawlist,
         )
         self.draw_limit(
-            (self.pendulum_width - 100, self.pend_drawlist_height // 2),
+            (self.pendulum_window_width - 100, self.pendulum_drawing_height // 2),
             self.limitR,
             "LIMIT",
             parent=self.pendulum_drawlist,
@@ -458,24 +418,21 @@ class PendulumVisualizerDPG:
         dpg.set_axis_limits(self.angular_velocity_y_axis, -40, 40)
 
 
-def on_sense(state, request):
-    state["theta"] += 0.01
-    return {"status": "OK", **state, "id": request["id"]}
-
-
-def on_move(state, request):
-    state["target"] += request["params"]["distance"]
-    return {"status": "OK", "id": request["id"]}
-
-
-def on_reset(state, request):
-    state["resetting"] = True
-    return {"status": "OK", "id": request["id"]}
-
-
 def launch():
     for m in get_monitors():
         monitor = m
+
+    def on_sense(state, request):
+        state["theta"] += 0.01
+        return {"status": "OK", **state, "id": request["id"]}
+
+    def on_move(state, request):
+        state["target"] += request["params"]["distance"]
+        return {"status": "OK", "id": request["id"]}
+
+    def on_reset(state, request):
+        state["resetting"] = True
+        return {"status": "OK", "id": request["id"]}
 
     with VirtualSerialPair() as (port1, port2):
         MockSerialEndpoint(
