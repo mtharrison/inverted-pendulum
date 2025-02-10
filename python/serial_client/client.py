@@ -4,6 +4,7 @@ import time
 from colorama import Fore, Style
 from typing import Optional, Dict, Any
 
+
 class SerialCommunicator:
     def __init__(self, port, baudrate=9600, dummy=False):
         """
@@ -16,14 +17,18 @@ class SerialCommunicator:
         if dummy:
             self.ser = serial.serial_for_url("loop://", timeout=0)
         else:
-            self.ser = serial.Serial(port, baudrate, timeout=0)
+            self.ser = serial.Serial(
+                port, baudrate, timeout=0, rtscts=True, dsrdtr=True
+            )
         self.next_request_id = 1
 
     def handle_async_message(self, message: dict) -> None:
         """Handle unsolicited messages."""
         print("Received async message:", message)
 
-    def _send_command(self, command: str, params: Optional[Dict[str, Any]] = None, timeout: float = 5) -> Dict[str, Any]:
+    def _send_command(
+        self, command: str, params: Optional[Dict[str, Any]] = None, timeout: float = 5
+    ) -> Dict[str, Any]:
         request_id = self.next_request_id
         self.next_request_id += 1
 
@@ -37,7 +42,9 @@ class SerialCommunicator:
         start_time = time.time()
         while True:
             if time.time() - start_time > timeout:
-                raise TimeoutError(f"Command {command} timed out after {timeout} seconds")
+                raise TimeoutError(
+                    f"Command {command} timed out after {timeout} seconds"
+                )
 
             # Read all available data
             data = self.ser.read(self.ser.in_waiting or 1)
@@ -53,7 +60,10 @@ class SerialCommunicator:
                 try:
                     response = json.loads(line.decode("utf-8"))
                 except json.JSONDecodeError:
-                    print(Fore.WHITE + Style.DIM + "[SERIAL]:", line.decode("utf-8", errors='replace') + Style.RESET_ALL)
+                    print(
+                        Fore.WHITE + Style.DIM + "[SERIAL]:",
+                        line.decode("utf-8", errors="replace") + Style.RESET_ALL,
+                    )
                     continue
 
                 if response.get("id") == request_id:
