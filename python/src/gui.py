@@ -325,11 +325,7 @@ class PendulumVisualizerDPG:
 
     def move(self, distance):
         with self.serial_lock:
-            print(f"Moving {distance}")
             self.serial.move(distance)
-            print("Moved")
-        
-        print("Moved 2")
 
     def update(self):
         """Update the pendulum and charts with the latest data."""
@@ -379,6 +375,17 @@ class PendulumVisualizerDPG:
         rod_length = 180
         bob_x = pivot[0] + rod_length * math.sin(-self.state["theta"])
         bob_y = pivot[1] + rod_length * math.cos(self.state["theta"])
+        
+        theta = self.state["theta"] % (2 * math.pi)
+        
+        dpg.draw_triangle(
+            p1=pivot,
+            p2=(pivot[0] - 20, pivot[1] - 150),
+            p3=(pivot[0] + 20, pivot[1] - 150),
+            color=[0, 255, 0, 30] if ((theta > math.pi - 0.15) and theta < math.pi + 0.15) else [255, 0, 0, 30],
+            fill=[0, 255, 0, 30] if ((theta > math.pi - 0.15) and theta < math.pi + 0.15) else [255, 0, 0, 30],
+            parent=self.pendulum_drawlist,
+        )
 
         # Draw the rod (a line from the pivot to the bob)
         dpg.draw_line(
@@ -410,6 +417,8 @@ class PendulumVisualizerDPG:
             fill=[255, 255, 255, 255],
             parent=self.pendulum_drawlist,
         )
+        
+        
 
         dpg.draw_line(
             p1=(100, self.pendulum_drawing_height // 2),

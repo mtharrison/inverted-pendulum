@@ -36,7 +36,6 @@ class SerialCommunicator:
         
         if params is not None:
             message["params"] = params
-        print(message)
         message_str = json.dumps(message) + "\n"
         self.ser.write(message_str.encode("utf-8"))
 
@@ -44,9 +43,10 @@ class SerialCommunicator:
         start_time = time.time()
         while True:
             if time.time() - start_time > timeout:
-                raise TimeoutError(
+                print(
                     f"Command {command} timed out after {timeout} seconds for {request_id}"
                 )
+                return
 
             # Read all available data
             data = self.ser.read(self.ser.in_waiting or 1)
@@ -68,8 +68,6 @@ class SerialCommunicator:
                     )
                     continue
                 
-                print('resp', response)
-
                 if response.get("id") == request_id:
                     return response
                 else:
