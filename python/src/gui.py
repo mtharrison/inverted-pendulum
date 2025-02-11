@@ -69,8 +69,8 @@ class PendulumVisualizerDPG:
                 width=400,
                 pos=(10, 30),
                 tag="cart_position_slider",
-                max_value=1000,
-                min_value=-1000,
+                max_value=self.state["extent"],
+                min_value=-self.state["extent"],
                 format="position = %.14f",
                 callback=lambda sender, app_data: self.move(
                     app_data - self.state["current_position"]
@@ -131,6 +131,7 @@ class PendulumVisualizerDPG:
                                         tag="angle_y_axis",
                                         auto_fit=True,
                                     )
+                                    dpg.set_axis_limits("angle_y_axis", -1, 1)
                                     self.angle_series = dpg.add_line_series(
                                         [],
                                         [],
@@ -161,7 +162,9 @@ class PendulumVisualizerDPG:
                                         dpg.mvYAxis,
                                         label="Angular Velocity",
                                         auto_fit=True,
+                                        tag="angular_velocity_y_axis",
                                     )
+                                    dpg.set_axis_limits("angular_velocity_y_axis", -20, 20)
                                     self.angular_velocity_series = dpg.add_line_series(
                                         [],
                                         [],
@@ -202,7 +205,7 @@ class PendulumVisualizerDPG:
                                         dpg.mvXAxis, label="Time", auto_fit=True
                                     )
                                     self.current_position_y_axis = dpg.add_plot_axis(
-                                        dpg.mvYAxis, label="Position", auto_fit=True
+                                        dpg.mvYAxis, label="Position", auto_fit=True, tag="current_position_y_axis"
                                     )
                                     self.current_position_series = dpg.add_line_series(
                                         [],
@@ -236,7 +239,7 @@ class PendulumVisualizerDPG:
                                         dpg.mvXAxis, label="Time", auto_fit=True
                                     )
                                     self.velocity_y_axis = dpg.add_plot_axis(
-                                        dpg.mvYAxis, label="Velocity", auto_fit=True
+                                        dpg.mvYAxis, label="Velocity", tag="velocity_y_axis", auto_fit=True
                                     )
                                     self.velocity_series = dpg.add_line_series(
                                         [],
@@ -322,7 +325,11 @@ class PendulumVisualizerDPG:
 
     def move(self, distance):
         with self.serial_lock:
+            print(f"Moving {distance}")
             self.serial.move(distance)
+            print("Moved")
+        
+        print("Moved 2")
 
     def update(self):
         """Update the pendulum and charts with the latest data."""
@@ -352,11 +359,14 @@ class PendulumVisualizerDPG:
 
         min_x_pos = 100
         max_x_pos = self.pendulum_window_width - 100
-        extents = self.state["extents"]
+        extent = self.state.get("extent", 1000)
         current_position = self.state["current_position"]
-        pendulum_offset_from_center = (current_position / extents) * (
-            (max_x_pos - min_x_pos - 90) / 2
-        )
+        if extent != 0:
+            pendulum_offset_from_center = (current_position / extent) * (
+                (max_x_pos - min_x_pos - 90) / 2
+            )
+        else:
+            pendulum_offset_from_center = 0
 
         # Remove any previous drawings
         dpg.delete_item(self.pendulum_drawlist, children_only=True)
@@ -453,6 +463,9 @@ class PendulumVisualizerDPG:
 
     def update_charts(self):
         number_of_points = 1000
+        
+        dpg.set_axis_limits("current_position_y_axis", -self.state["extent"], self.state["extent"])
+        dpg.set_axis_limits("velocity_y_axis", -self.state["extent"], self.state["extent"])
 
         # Update angle chart data
         x_data = list(range(len(self.angle_history)))[-number_of_points:]
@@ -510,7 +523,7 @@ def launch():
             state["limitR"] = False
             state["enabled"] = True if random.uniform(-1, 1) < 0 else False
             state["resetting"] = state["resetting"]
-            state["extents"] = 1000
+            state["extent"] = 1000
 
             return {"status": "OK", **state, "id": request["id"]}
 

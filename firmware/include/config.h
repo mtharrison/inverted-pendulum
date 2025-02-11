@@ -13,15 +13,15 @@
 
 // Motor Configuration
 #define MICROSTEPS          1600
-#define MAX_SPEED           (100000 * 2)
-#define MAX_ACCEL          (10000 * 10)
+#define MAX_SPEED           (10000 * 10)
+#define MAX_ACCEL          (10000 * 2)
 #define SAFE_SPEED         1000
 
 // Task Configuration
 #define TASK_STACK_SIZE    4096
-#define TASK_PRIORITY_COMMUNICATE 5
+#define TASK_PRIORITY_COMMUNICATE 3
 #define TASK_PRIORITY_MONITOR    4
-#define TASK_PRIORITY_ACT        3
+#define TASK_PRIORITY_ACT        5
 
 // Communication Configuration
 #define SERIAL_BUFFER_SIZE  256

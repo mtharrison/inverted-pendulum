@@ -73,34 +73,33 @@ void communicate(void* parameters) {
 
             if (command == "sense") {
                 xSemaphoreTake(dataMutex, portMAX_DELAY);
-                response["position"] = motorState.current_position;
+                response["current_position"] = motorState.current_position;
                 response["velocity"] = motorState.velocity;
                 response["theta"] = motorState.theta;
                 response["angular_velocity"] = motorState.angular_velocity;
                 response["limitL"] = motorState.limitL;
                 response["limitR"] = motorState.limitR;
-                response["target"] = motorState.target_position;
+                response["target_position"] = motorState.target_position;
                 response["enabled"] = motorState.enabled;
                 response["resetting"] = motorState.resetting;
                 response["extent"] = motorState.extent;
                 xSemaphoreGive(dataMutex);
             }
             else if (command == "move") {
-                int action = request["params"]["action"];
+                long distance = request["params"]["distance"].as<long>();
 
                 xSemaphoreTake(dataMutex, portMAX_DELAY);
                 if (motorState.enabled) {
-                    motorState.target_position += action;
+                    motorState.target_position += distance;
                 }
+                response["target_position"] = motorState.target_position; 
                 xSemaphoreGive(dataMutex);
-                continue;
             }
             else if (command == "reset") {
                 xSemaphoreTake(dataMutex, portMAX_DELAY);
                 motorState.resetting = true;
                 xSemaphoreGive(dataMutex);
                 xEventGroupSetBits(resetEventGroup, RESET_BIT);
-                continue;
             }
             else {
                 response["status"] = "ERROR";
@@ -121,7 +120,11 @@ void monitor(void* parameters) {
     LimitSwitch limitL(LIMIT_L_PIN);
     LimitSwitch limitR(LIMIT_R_PIN);
 
+    float filtered_angular_velocity = 0;
     float filtered_velocity = 0;
+    int32_t lastPosition = 0;
+    int32_t lastTheta = 0;
+
     int64_t lastTime = esp_timer_get_time();
 
     for (;;) {
@@ -133,7 +136,7 @@ void monitor(void* parameters) {
         motorState.limitR = limitStateR;
         xSemaphoreGive(dataMutex);
 
-        // Update position and velocity
+        // Update position and velocities
         int64_t now = esp_timer_get_time();
         float dt = (now - lastTime) / 1e6;
         lastTime = now;
@@ -141,18 +144,29 @@ void monitor(void* parameters) {
         int32_t encoderCount = encoder.getCount();
         float newTheta = encoderCount * ENCODER_TO_RAD;
 
+        long currentPosition = motorState.current_position;
+
+
         if (dt > 0) {
-            float velocity = (newTheta - motorState.theta) / dt;
+            float angular_velocity = (newTheta - motorState.theta) / dt;
+            filtered_angular_velocity = VELOCITY_FILTER_ALPHA * angular_velocity +
+                (1 - VELOCITY_FILTER_ALPHA) * filtered_angular_velocity;
+
+            float velocity = (currentPosition - lastPosition) / dt;
             filtered_velocity = VELOCITY_FILTER_ALPHA * velocity +
-                (1 - VELOCITY_FILTER_ALPHA) * filtered_velocity;
+                (1 - VELOCITY_FILTER_ALPHA) * filtered_velocity;    
         }
+
+        lastTheta = newTheta;
+        lastPosition = currentPosition;
 
         xSemaphoreTake(dataMutex, portMAX_DELAY);
         motorState.theta = newTheta;
-        motorState.angular_velocity = filtered_velocity;
+        motorState.angular_velocity = filtered_angular_velocity;
+        motorState.velocity = filtered_velocity;
         xSemaphoreGive(dataMutex);
 
-        vTaskDelay(pdMS_TO_TICKS(1));
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -180,45 +194,39 @@ void act(void* parameters) {
 
         if (xEventGroupGetBits(resetEventGroup) & RESET_BIT) {
             stepper.setMaxSpeed(SAFE_SPEED);
-            DEBUG("Motor reset requested");
-            DEBUG("Finding right limit switch");
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
-            stepper.moveTo(-100000);
+            stepper.moveTo(100000);
             while (!limitStateR) {
                 stepper.run();
                 xSemaphoreTake(dataMutex, portMAX_DELAY);
                 limitStateR = motorState.limitR;
                 xSemaphoreGive(dataMutex);
+                vTaskDelay(pdMS_TO_TICKS(1));
             }
 
             digitalWrite(MOTOR_ENABLE_PIN, LOW);
             long rightPosition = stepper.currentPosition();
             stepper.setCurrentPosition(rightPosition);
-            DEBUG("Found right limit switch at %d", rightPosition);
-
-            DEBUG("Finding left limit switch");
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
-            stepper.moveTo(100000);
+            stepper.moveTo(-100000);
             while (!limitStateL) {
                 stepper.run();
                 xSemaphoreTake(dataMutex, portMAX_DELAY);
                 limitStateL = motorState.limitL;
                 xSemaphoreGive(dataMutex);
+                vTaskDelay(pdMS_TO_TICKS(1));
             }
 
             digitalWrite(MOTOR_ENABLE_PIN, LOW);
             long leftPosition = stepper.currentPosition();
             stepper.setCurrentPosition(leftPosition);
-            DEBUG("Found left limit switch at %d", leftPosition);
 
             stepper.setMaxSpeed(MAX_SPEED);
             long center = (rightPosition + leftPosition) / 2;
-            DEBUG("Moving to center at %d", center);
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
             stepper.moveTo(center);
             stepper.runToPosition();
             stepper.setCurrentPosition(0);
-            DEBUG("Moved to center");
 
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             motorState.current_position = 0;
@@ -238,11 +246,9 @@ void act(void* parameters) {
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             motorState.current_position = stepper.currentPosition();
             xSemaphoreGive(dataMutex);
-
-            if (stepper.distanceToGo() != 0) {
-                DEBUG("Moving to %d, current position: %d", target, motorState.current_position);
-            }
         }
+
+        // vTaskDelay(pdMS_TO_TICKS(0.1));
     }
 }
 
@@ -254,7 +260,9 @@ void setup() {
     xTaskCreatePinnedToCore(monitor, "Monitor", TASK_STACK_SIZE, NULL,
         TASK_PRIORITY_MONITOR, NULL, 1);
     xTaskCreatePinnedToCore(act, "Act", TASK_STACK_SIZE, NULL,
-        TASK_PRIORITY_ACT, NULL, 1);
+        TASK_PRIORITY_ACT, NULL, 0);
+
+    disableCore0WDT();
 }
 
 void loop() {

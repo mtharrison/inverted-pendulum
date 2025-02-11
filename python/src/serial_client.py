@@ -33,8 +33,10 @@ class SerialCommunicator:
         self.next_request_id += 1
 
         message = {"id": request_id, "command": command}
+        
         if params is not None:
             message["params"] = params
+        print(message)
         message_str = json.dumps(message) + "\n"
         self.ser.write(message_str.encode("utf-8"))
 
@@ -65,6 +67,8 @@ class SerialCommunicator:
                         line.decode("utf-8", errors="replace") + Style.RESET_ALL,
                     )
                     continue
+                
+                print('resp', response)
 
                 if response.get("id") == request_id:
                     return response
