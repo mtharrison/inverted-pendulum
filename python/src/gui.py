@@ -37,7 +37,8 @@ class PendulumVisualizerDPG:
         self.last_update = perf_counter()
 
         # History for charts
-        self.angle_history = []
+        self.angle_sin_history = []
+        self.angle_cos_history = []
         self.angular_velocity_history = []
         self.current_position_history = []
         self.target_position_history = []
@@ -127,17 +128,25 @@ class PendulumVisualizerDPG:
                                     )
                                     self.angle_y_axis = dpg.add_plot_axis(
                                         dpg.mvYAxis,
-                                        label="Sin(angle)",
+                                        label="Sin/Cos",
                                         tag="angle_y_axis",
                                         auto_fit=True,
                                     )
                                     dpg.set_axis_limits("angle_y_axis", -1, 1)
-                                    self.angle_series = dpg.add_line_series(
+                                    self.angle_sin_series = dpg.add_line_series(
                                         [],
                                         [],
-                                        label="Angle",
+                                        label="sin(angle)",
                                         parent="angle_y_axis",
-                                        tag="angle_series",
+                                        tag="angle_sin_series",
+                                    )
+                                    
+                                    self.angle_cos_series = dpg.add_line_series(
+                                        [],
+                                        [],
+                                        label="cos(angle)",
+                                        parent="angle_y_axis",
+                                        tag="angle_cos_series",
                                     )
 
                             with dpg.child_window(
@@ -309,11 +318,15 @@ class PendulumVisualizerDPG:
     def get_observation(self):
         with self.serial_lock:
             data = self.serial.sense()
+            
+            if not data:
+                return
 
             if data.get("status") == "OK":
                 self.state = data
 
-                self.angle_history.append(self.continuous_angle(self.state["theta"]))
+                self.angle_sin_history.append(math.sin(self.state["theta"]))
+                self.angle_cos_history.append(math.cos(self.state["theta"]))
                 self.angular_velocity_history.append(self.state["angular_velocity"])
                 self.current_position_history.append(self.state["current_position"])
                 self.target_position_history.append(self.state["target_position"])
@@ -477,9 +490,14 @@ class PendulumVisualizerDPG:
         dpg.set_axis_limits("velocity_y_axis", -self.state["extent"], self.state["extent"])
 
         # Update angle chart data
-        x_data = list(range(len(self.angle_history)))[-number_of_points:]
-        y_data = [math.sin(a) for a in self.angle_history][-number_of_points:]
-        dpg.set_value(self.angle_series, [x_data, y_data])
+        x_data_sin = list(range(len(self.angle_sin_history)))[-number_of_points:]
+        y_data_sin = self.angle_sin_history[-number_of_points:]
+        dpg.set_value(self.angle_sin_series, [x_data_sin, y_data_sin])
+        
+        x_data_cos = list(range(len(self.angle_cos_history)))[-number_of_points:]
+        y_data_cos = self.angle_cos_history[-number_of_points:]
+        dpg.set_value(self.angle_cos_series, [x_data_cos, y_data_cos])
+        
         dpg.set_value(
             "angle_text", f"Angle: {self.continuous_angle(self.state['theta']):.2f} rad"
         )
