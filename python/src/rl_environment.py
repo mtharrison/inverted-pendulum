@@ -51,14 +51,17 @@ class InvertedPendulumEnv(gym.Env):
         self._clear_episode_data()
         
         response = self.client.sense()
-        self.data_queue.put({ 'type': 'observation', 'data': response })
+        if response is not None:
+            self.data_queue.put({ 'type': 'observation', 'data': response })
         if not response['enabled']:
             self.client.reset()
         
         # wait until resetting=false
         while True:
             response = self.client.sense()
-            self.data_queue.put({ 'type': 'observation', 'data': response })
+            print(response)
+            if response is not None:
+                self.data_queue.put({ 'type': 'observation', 'data': response })
             if not response['resetting']:
                 break
             time.sleep(1)
@@ -68,9 +71,10 @@ class InvertedPendulumEnv(gym.Env):
         return obs, {}
 
     def step(self, action: np.int8) -> Tuple[np.ndarray, float, bool, bool, dict]:
-        self.client.move(300 * (action - 1))
+        self.client.move(10 * (action - 1))
         response = self.client.sense()
-        self.data_queue.put({ 'type': 'observation', 'data': response })
+        if response is not None:
+            self.data_queue.put({ 'type': 'observation', 'data': response })
         # Convert observation to state vector
         obs = self.convert_observation(response)
         

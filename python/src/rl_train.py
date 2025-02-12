@@ -5,6 +5,7 @@ from serial_client import SerialCommunicator
 from serial_virtual import VirtualSerialPair
 from serial_mock import MockSerialEndpoint
 from gui import PendulumVisualizerDPG
+import os
 
 import numpy as np
 import random
@@ -80,6 +81,7 @@ def train(env: gym.Env, agent: DQNAgent, logger: TrainingLogger,
 
 def training_thread(port, data_queue):
     client = SerialCommunicator(port)
+    print(client.sense())
     env = InvertedPendulumEnv(client, data_queue=data_queue)
     agent = DQNAgent(
         state_dim=env.observation_space.shape[0],
@@ -96,34 +98,45 @@ def training_thread(port, data_queue):
 def main():
     data_queue = Queue()
     
-    def on_sense(state, request):
-        state["theta"] += 0.01
-        state["angular_velocity"] = random.uniform(-1, 1)
-        state["current_position"] = math.cos(state["theta"]) * 1000
-        state["target_position"] = (math.cos(state["theta"]) * 1000) + 200
-        state["velocity"] = random.uniform(-1, 1)
-        state["limitL"] = False
-        state["limitR"] = False
-        state["enabled"] = True if random.uniform(-1, 1) < 0 else False
-        state["resetting"] = state["resetting"]
-        state["extent"] = 1000
-
-        return {"status": "OK", **state, "id": request["id"]}
-
-    def on_move(state, request):
-        state["target"] += request["params"]["distance"]
-        return {"status": "OK", "id": request["id"]}
-
-    def on_reset(state, request):
-        # state["resetting"] = True
-        return {"status": "OK", "id": request["id"], "resetting": True}
+    if os.getenv("DEV", False):
     
-    with VirtualSerialPair() as (port1, port2):
-        MockSerialEndpoint(
-            port=port1, on_sense=on_sense, on_move=on_move, on_reset=on_reset
-        )
+        def on_sense(state, request):
+            state["theta"] += 0.01
+            state["angular_velocity"] = random.uniform(-1, 1)
+            state["current_position"] = math.cos(state["theta"]) * 1000
+            state["target_position"] = (math.cos(state["theta"]) * 1000) + 200
+            state["velocity"] = random.uniform(-1, 1)
+            state["limitL"] = False
+            state["limitR"] = False
+            state["enabled"] = True if random.uniform(-1, 1) < 0 else False
+            state["resetting"] = state["resetting"]
+            state["extent"] = 1000
+
+            return {"status": "OK", **state, "id": request["id"]}
+
+        def on_move(state, request):
+            state["target"] += request["params"]["distance"]
+            return {"status": "OK", "id": request["id"]}
+
+        def on_reset(state, request):
+            # state["resetting"] = True
+            return {"status": "OK", "id": request["id"], "resetting": True}
         
-        thrain_thread = threading.Thread(target=training_thread, args=(port2,data_queue))
+        with VirtualSerialPair() as (port1, port2):
+            MockSerialEndpoint(
+                port=port1, on_sense=on_sense, on_move=on_move, on_reset=on_reset
+            )
+            
+            thrain_thread = threading.Thread(target=training_thread, args=(port2,data_queue))
+            thrain_thread.start()
+            
+            visualizer = PendulumVisualizerDPG(data_queue=data_queue)
+            visualizer.run()
+            
+            thrain_thread.join()
+    else:
+        port = os.getenv("SERIAL_PORT", "/dev/cu.usbmodem2101")
+        thrain_thread = threading.Thread(target=training_thread, args=(port,data_queue))
         thrain_thread.start()
         
         visualizer = PendulumVisualizerDPG(data_queue=data_queue)

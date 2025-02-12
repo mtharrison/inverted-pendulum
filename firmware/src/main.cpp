@@ -221,7 +221,7 @@ void act(void* parameters) {
             long leftPosition = stepper.currentPosition();
             stepper.setCurrentPosition(leftPosition);
 
-            stepper.setMaxSpeed(MAX_SPEED);
+            
             long center = (rightPosition + leftPosition) / 2;
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
             stepper.moveTo(center);
@@ -236,6 +236,7 @@ void act(void* parameters) {
             motorState.extent = abs(center - leftPosition);
             xSemaphoreGive(dataMutex);
             xEventGroupClearBits(resetEventGroup, RESET_BIT);
+            stepper.setMaxSpeed(MAX_SPEED);
             continue;
         }
 
@@ -248,7 +249,7 @@ void act(void* parameters) {
             xSemaphoreGive(dataMutex);
         }
 
-        // vTaskDelay(pdMS_TO_TICKS(0.1));
+        vTaskDelay(pdMS_TO_TICKS(0.1));
     }
 }
 
