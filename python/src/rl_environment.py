@@ -7,12 +7,13 @@ import math
 class InvertedPendulumEnv(gym.Env):
     metadata = {'render_modes': ['human']}
 
-    def __init__(self, client, gui=None, max_episode_steps: int = 500, step_size: float = 0.1):
+    def __init__(self, client, max_episode_steps: int = 500, step_size: float = 0.1, data_queue=None):
         super().__init__()
+        
         self.client = client
-        self.gui = gui
         self.max_episode_steps = max_episode_steps
         self.step_size = step_size  # Physical distance per action unit
+        self.data_queue = data_queue
         
         # Discrete action space: -1 (left), 0 (stay), +1 (right)
         self.action_space = gym.spaces.Discrete(3)
@@ -50,29 +51,26 @@ class InvertedPendulumEnv(gym.Env):
         self._clear_episode_data()
         
         response = self.client.sense()
+        self.data_queue.put({ 'type': 'observation', 'data': response })
         if not response['enabled']:
             self.client.reset()
         
         # wait until resetting=false
         while True:
             response = self.client.sense()
+            self.data_queue.put({ 'type': 'observation', 'data': response })
             if not response['resetting']:
                 break
             time.sleep(1)
             
-        time.sleep(4)
-        
         obs = self.convert_observation(self.client.sense())
-        
-        if self.gui:
-            self.gui.on_episode_reset()
         
         return obs, {}
 
     def step(self, action: np.int8) -> Tuple[np.ndarray, float, bool, bool, dict]:
         self.client.move(300 * (action - 1))
         response = self.client.sense()
-        
+        self.data_queue.put({ 'type': 'observation', 'data': response })
         # Convert observation to state vector
         obs = self.convert_observation(response)
         
@@ -144,17 +142,6 @@ class InvertedPendulumEnv(gym.Env):
         self.episode_data['states'].append(obs)
         self.episode_data['rewards'].append(reward)
         self.episode_data['actions'].append(action)
-        
-        # Update GUI if available
-        if self.gui:
-            self.gui.update_plots(
-                timestep=self.step_count,
-                state=obs,
-                reward=reward,
-                action=action,
-                terminated=terminated,
-                truncated=truncated
-            )
 
     def _clear_episode_data(self) -> None:
         for key in self.episode_data:

@@ -6,6 +6,7 @@ from collections import deque, namedtuple
 import random
 from typing import Optional
 import gymnasium as gym
+from queue import Queue
 
 # Define experience tuple
 Transition = namedtuple('Transition', 
@@ -42,13 +43,14 @@ class DQNAgent:
     def __init__(self, state_dim: int, action_dim: int, 
                  lr: float = 1e-3, gamma: float = 0.99,
                  epsilon_max: float = 0.9, epsilon_min: float = 0.05,
-                 epsilon_decay: float = 0.995):
+                 epsilon_decay: float = 0.995, data_queue: Queue = None):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.action_dim = action_dim
         self.gamma = gamma
         self.epsilon = epsilon_max
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
+        self.data_queue = data_queue
         
         # Networks
         self.policy_net = DQN(state_dim, action_dim).to(self.device)

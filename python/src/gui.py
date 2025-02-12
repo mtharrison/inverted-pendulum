@@ -1,11 +1,9 @@
 import math
 from time import perf_counter
-import threading
 import random
 import os
 import dearpygui.dearpygui as dpg
 
-from serial_client import SerialCommunicator
 from serial_mock import MockSerialEndpoint
 from serial_virtual import VirtualSerialPair
 from screeninfo import get_monitors
@@ -15,13 +13,25 @@ FRAMES_PER_SECOND = 60
 
 
 class PendulumVisualizerDPG:
-    def __init__(self, monitor, port="/dev/cu.usbmodem2101"):
+    def __init__(self, data_queue):
+        for m in get_monitors():
+            monitor = m
+            
+        self.data_queue = data_queue
+            
         # Initialize serial communicator and lock
-        self.serial_lock = threading.Lock()
-        self.serial = SerialCommunicator(port)
-
-        initial_state = self.serial.sense()
-        self.state = initial_state
+        self.state = {
+            'theta': 0,
+            'angular_velocity': 0,
+            'current_position': 0,
+            'target_position': 0,
+            'velocity': 0,
+            'limitL': False,
+            'limitR': False,
+            'enabled': False,
+            'resetting': False,
+            'extent': 1000
+        }
 
         # Sizes
         self.viewport_width = monitor.width - MARGIN_AROUND_VIEWPORT
@@ -43,7 +53,9 @@ class PendulumVisualizerDPG:
         self.current_position_history = []
         self.target_position_history = []
         self.velocity_history = []
-
+        self.reward_history = []
+        self.loss_history = []
+        
         dpg.create_context()
         dpg.create_viewport(
             title="Pendulum Visualizer",
@@ -294,43 +306,74 @@ class PendulumVisualizerDPG:
                 with dpg.table_row():
                     with dpg.group(tag="episode stats", horizontal=True):
                         dpg.add_text("Episode: 0/100", tag="episode_text")
-                        dpg.add_text("Reward: 0", tag="reward_text")
                         dpg.add_text("Epsilon: 0", tag="epsilon_text")
-                        dpg.add_text("Loss: 0", tag="loss_text")
                         dpg.add_text("Steps: 0", tag="steps_text")
-                        dpg.add_text("Time: 0", tag="time_text")
-                        dpg.add_text("Total time: 0", tag="total_time_text")
+                        dpg.add_text("Episode time: 0", tag="episode time_text")
+                        dpg.add_text("Total time: 0", tag="total time_text")
 
                 with dpg.table_row():
                     # Add reward vs episode plot
-                    with dpg.child_window(label="training_chart", width=-1, height=-1):
+                    with dpg.child_window(label="reward_chart", width=-1, height=self.viewport_height // 2 - 45):
                         with dpg.plot(
                             label="Reward vs Episode",
                             height=-1,
                             width=-1,
                         ):
-                            pass
+                            dpg.add_plot_legend()
+                            self.reward_x_axis = dpg.add_plot_axis(
+                                dpg.mvXAxis,
+                                label="Episode",
+                                tag="reward_x_axis",
+                                auto_fit=True,
+                            )
+                            self.reward_y_axis = dpg.add_plot_axis(
+                                dpg.mvYAxis,
+                                label="Reward",
+                                tag="reward_y_axis",
+                                auto_fit=True,
+                            )
+                            self.reward_series = dpg.add_line_series(
+                                [],
+                                [],
+                                label="Reward",
+                                parent="reward_y_axis",
+                                tag="reward_series",
+                            )
+                            
+                            
+                        
+                with dpg.table_row():
+                    # Add reward vs episode plot
+                    with dpg.child_window(label="loss_chart", width=-1, height=self.viewport_height // 2 - 45):
+                        with dpg.plot(
+                            label="Loss vs Episode",
+                            height=-1,
+                            width=-1,
+                        ):
+                            dpg.add_plot_legend()
+                            self.loss_x_axis = dpg.add_plot_axis(
+                                dpg.mvXAxis,
+                                label="Episode",
+                                tag="loss_x_axis",
+                                auto_fit=True,
+                            )
+                            self.loss_y_axis = dpg.add_plot_axis(
+                                dpg.mvYAxis,
+                                label="Loss",
+                                tag="loss_y_axis",
+                                auto_fit=True,
+                            )
+                            self.loss_series = dpg.add_line_series(
+                                [],
+                                [],
+                                label="Loss",
+                                parent="loss_y_axis",
+                                tag="loss_series",
+                            )
 
     def continuous_angle(self, angle):
         """Return an angle in the range [0, 2π)."""
         return angle % (2 * math.pi)
-
-    def get_observation(self):
-        with self.serial_lock:
-            data = self.serial.sense()
-            
-            if not data:
-                return
-
-            if data.get("status") == "OK":
-                self.state = data
-
-                self.angle_sin_history.append(math.sin(self.state["theta"]))
-                self.angle_cos_history.append(math.cos(self.state["theta"]))
-                self.angular_velocity_history.append(self.state["angular_velocity"])
-                self.current_position_history.append(self.state["current_position"])
-                self.target_position_history.append(self.state["target_position"])
-                self.velocity_history.append(self.state["velocity"])
 
     def reset(self, sender, app_data):
         with self.serial_lock:
@@ -340,11 +383,32 @@ class PendulumVisualizerDPG:
         with self.serial_lock:
             self.serial.move(distance)
 
+    def pump_queue(self):
+        qsize = self.data_queue.qsize()
+        for _ in range(qsize):
+            item = self.data_queue.get()
+            if item["type"] == "observation":
+                self.state = item["data"]
+                self.angle_sin_history.append(math.sin(self.state["theta"]))
+                self.angle_cos_history.append(math.cos(self.state["theta"]))
+                self.angular_velocity_history.append(self.state["angular_velocity"])
+                self.current_position_history.append(self.state["current_position"])
+                self.target_position_history.append(self.state["target_position"])
+                self.velocity_history.append(self.state["velocity"])
+            if item["type"] == "training":
+                for key, value in item['data'].items():
+                    dpg.set_value(f'{key}_text', f'{key.title()}: {value}')
+            if item["type"] == "episode":
+                self.reward_history.append(item["data"]["reward"])
+                self.loss_history.append(item["data"]["loss"])
+        
+
     def update(self):
         """Update the pendulum and charts with the latest data."""
         now = perf_counter()
         if now - self.last_update >= self.update_interval:
-            self.get_observation()
+            self.pump_queue()
+            # self.get_observation()
             self.draw_pendulum()
             self.update_charts()
             self.last_update = now
@@ -357,7 +421,6 @@ class PendulumVisualizerDPG:
 
         # Cleanup
         self.running = False
-        self.serial.close()
         dpg.destroy_context()
 
     def draw_pendulum(self):
@@ -430,8 +493,6 @@ class PendulumVisualizerDPG:
             fill=[255, 255, 255, 255],
             parent=self.pendulum_drawlist,
         )
-        
-        
 
         dpg.draw_line(
             p1=(100, self.pendulum_drawing_height // 2),
@@ -532,6 +593,16 @@ class PendulumVisualizerDPG:
         dpg.set_value("velocity_text", f"Velocity: {self.state['velocity']:.2f}")
 
         dpg.set_value("cart_position_slider", self.state["current_position"])
+        
+        # Update reward vs episode chart data
+        x_data_reward = list(range(len(self.reward_history)))
+        y_data_reward = self.reward_history
+        dpg.set_value(self.reward_series, [x_data_reward, y_data_reward])
+        
+        # Update loss vs episode chart data
+        x_data_loss = list(range(len(self.loss_history)))
+        y_data_loss = self.loss_history
+        dpg.set_value(self.loss_series, [x_data_loss, y_data_loss])
 
 
 def launch():
