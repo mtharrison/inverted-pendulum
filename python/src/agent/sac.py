@@ -90,11 +90,11 @@ class SACAgent:
         self.device = device
 
         # Networks
-        self.actor = Actor(state_dim, action_dim).to(device)
-        self.critic1 = Critic(state_dim, action_dim).to(device)
-        self.critic2 = Critic(state_dim, action_dim).to(device)
-        self.critic1_target = Critic(state_dim, action_dim).to(device)
-        self.critic2_target = Critic(state_dim, action_dim).to(device)
+        self.actor = Actor(state_dim, action_dim)
+        self.critic1 = Critic(state_dim, action_dim)
+        self.critic2 = Critic(state_dim, action_dim)
+        self.critic1_target = Critic(state_dim, action_dim)
+        self.critic2_target = Critic(state_dim, action_dim)
 
         # Initialize targets
         self.critic1_target.load_state_dict(self.critic1.state_dict())
@@ -106,12 +106,12 @@ class SACAgent:
         self.critic2_optimizer = torch.optim.Adam(self.critic2.parameters(), lr=lr)
 
         # Entropy tuning
-        self.target_entropy = -torch.prod(torch.Tensor([action_dim]).to(device)).item()
-        self.log_alpha = torch.zeros(1, requires_grad=True, device=device)
+        self.target_entropy = -torch.prod(torch.Tensor([action_dim])).item()
+        self.log_alpha = torch.zeros(1, requires_grad=True)
         self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=lr)
 
     def select_action(self, state, evaluate=False):
-        state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
+        state = torch.FloatTensor(state).unsqueeze(0)
         if evaluate:
             mu, _ = self.actor(state)
             action = torch.tanh(mu)
@@ -137,7 +137,7 @@ class SACAgent:
         return directory + filename
 
     def load_checkpoint(self, filename, device, directory="models/"):
-        checkpoint = torch.load(directory + filename, map_location=device)
+        checkpoint = torch.load(directory + filename)
         self.actor.load_state_dict(checkpoint["actor_state_dict"])
         self.critic1.load_state_dict(checkpoint["critic1_state_dict"])
         self.critic2.load_state_dict(checkpoint["critic2_state_dict"])
@@ -154,11 +154,11 @@ class SACAgent:
     def update_parameters(self, buffer, batch_size):
         state, action, reward, next_state, done = buffer.sample(batch_size)
 
-        state = torch.FloatTensor(state).to(self.device)
-        next_state = torch.FloatTensor(next_state).to(self.device)
-        action = torch.FloatTensor(action).to(self.device)
-        reward = torch.FloatTensor(reward).unsqueeze(1).to(self.device)
-        done = torch.FloatTensor(done).unsqueeze(1).to(self.device)
+        state = torch.FloatTensor(state)
+        next_state = torch.FloatTensor(next_state)
+        action = torch.FloatTensor(action)
+        reward = torch.FloatTensor(reward).unsqueeze(1)
+        done = torch.FloatTensor(done).unsqueeze(1)
 
         with torch.no_grad():
             next_action, next_log_prob = self.actor.sample(next_state)

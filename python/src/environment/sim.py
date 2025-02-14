@@ -101,9 +101,12 @@ class InvertedPendulumContinuousControlSim(Env):
         # Reward calculation
         reward_theta = (np.cos(theta) + 1.0) / 2.0
         reward_x = np.cos((x / self.x_threshold) * (np.pi / 2.0))
-        reward = reward_theta * reward_x
+        reward_bonus = 0.0
+        if np.cos(theta) > 0.999:
+            reward_bonus = 0.5
+        reward = reward_theta * reward_x + reward_bonus
         if terminated:
-            reward = -100.0
+            reward = -1.0
 
         obs = np.array([x, x_dot, np.cos(theta), np.sin(theta), theta_dot])
 
