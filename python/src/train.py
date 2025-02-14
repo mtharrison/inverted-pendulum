@@ -81,8 +81,8 @@ def train(environment_class, data_queue, signal_queue):
         episode_losses = []
 
         before_step = time.time()
+        episode_start_time = time.time()
         for step in range(max_steps):
-            episode_start_time = time.time()
             action = agent.select_action(state)
 
             next_state, reward, terminated, truncated, _ = env.step(action)
@@ -208,8 +208,8 @@ def train(environment_class, data_queue, signal_queue):
 def main():
     data_queue = Queue()
     signal_queue = Queue()
-
-    if os.getenv("DEV", False):
+    
+    if os.getenv("DEV", False) == "true":
         environment_class = InvertedPendulumContinuousControlSim
     else:
         environment_class = InvertedPendulumContinuousControlPhysical

@@ -1,8 +1,11 @@
 import gymnasium as gym
+from gymnasium import spaces
+from gymnasium.utils import seeding
 import numpy as np
 from typing import Optional, Tuple
 import time
 import math
+from serial_communication.client import SerialCommunicator
 
 
 class InvertedPendulumContinuousControlPhysical(gym.Env):
@@ -17,61 +20,51 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
     ):
         super().__init__()
 
-        self.client = client
-        self.max_episode_steps = max_episode_steps
+        self.client = SerialCommunicator(port='/dev/cu.usbmodem2201')
 
         self.t = 0  # timestep
         self.t_limit = 1000
 
-        # Discrete action space: -1 (left), 0 (stay), +1 (right)
-        self.action_space = gym.spaces.Discrete(3)
-
-        # Observation: [theta, theta_dot, cart_position, cart_velocity]
-        self.observation_space = gym.spaces.Box(
-            low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32
+        # Observation and action spaces
+        high = np.array(
+            [
+                np.finfo(np.float32).max,
+                np.finfo(np.float32).max,
+                np.finfo(np.float32).max,
+                np.finfo(np.float32).max,
+                np.finfo(np.float32).max,
+            ]
         )
+        self.action_space = spaces.Box(-1.0, 1.0, shape=(1,))
+        self.observation_space = spaces.Box(-high, high)
 
-        # Environment parameters
-        self.theta_threshold = 15 * np.pi / 180  # ±15 degrees
-        self.cart_position_threshold = 2.4  # meters
+        self.np_random, _ = seeding.np_random(None)
+        self.state = (0,0,math.pi,0)
 
-        self.step_count = 0
-        self.episode_data = {
-            "timesteps": [],
-            "states": [],
-            "rewards": [],
-            "actions": [],
-        }
 
-    def convert_observation(self, obs: dict) -> np.ndarray:
-        theta = obs["theta"]
-        theta_dot = obs["angular_velocity"]
-        x = obs["current_position"]
-        x_dot = obs["velocity"]
-        return np.array(
-            [math.sin(theta), math.cos(theta), theta_dot, x, x_dot], dtype=np.float32
-        )
+    def convert_observation(self, response: dict) -> np.ndarray:
+        extent = response["extent"] if response["extent"] > 0 else 1000
+        self.x_threshold = extent
+        theta = response["theta"]
+        theta_dot = response["angular_velocity"]
+        x = response["current_position"] / self.x_threshold
+        x_dot = response["velocity"] / self.x_threshold
+        
+        return np.array([x, x_dot, np.cos(theta), np.sin(theta), theta_dot])
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict] = None
     ) -> Tuple[np.ndarray, dict]:
-        # self.client.reset()
-        self.step_count = 0
-        self._clear_episode_data()
+        
+        self.state = np.array([0, 0, np.pi, 0])
+        self.t = 0
 
-        response = self.client.sense()
-        if response is not None:
-            self.data_queue.put({"type": "observation", "data": response})
-        if not response["enabled"]:
-            self.client.reset()
+        self.client.reset()
 
         # wait until resetting=false
         while True:
             response = self.client.sense()
-            print(response)
-            if response is not None:
-                self.data_queue.put({"type": "observation", "data": response})
-            if not response["resetting"]:
+            if response is not None and not response["resetting"]:
                 break
             time.sleep(1)
 
@@ -79,11 +72,16 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
 
         return obs, {}
 
-    def step(self, action: np.int8) -> Tuple[np.ndarray, float, bool, bool, dict]:
-        self.client.move(10 * (action - 1))
+    def step(self, action):
+        action = np.clip(action, -1.0, 1.0)[0]
+        self.client.move(action.item())
+        time.sleep(0.001)
         response = self.client.sense()
-        if response is not None:
-            self.data_queue.put({"type": "observation", "data": response})
+        if response is None:
+            return self.last_step_return
+        
+        self.state[2] = response["theta"]
+        
         # Convert observation to state vector
         obs = self.convert_observation(response)
 
@@ -94,82 +92,33 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         terminated = limitL or limitR
 
         # Calculate reward
-        reward = self._calculate_reward(obs, action - 1, terminated)
+        reward = self._calculate_reward(obs, terminated)
 
         # Check truncation
-        self.step_count += 1
-        truncated = self.step_count >= self.max_episode_steps
+        self.t += 1
+        truncated = self.t >= self.t_limit
 
         # Update GUI and episode data
-        self._update_gui_and_data(obs, reward, action, terminated, truncated)
+        self.last_step_return = (obs, reward, action, terminated, truncated)
 
         return obs, reward, terminated, truncated, {}
 
-    def _calculate_reward(self, state: np.ndarray, action: int, terminated) -> float:
-        """
-        New reward function using sin(theta) and cos(theta)
-        state: [sin(theta), cos(theta), theta_dot, cart_position, cart_velocity]
-        """
-        sin_theta, cos_theta, theta_dot, x, x_dot = state
+    def _calculate_reward(self, obs, terminated) -> float:
+        #np.array([x, x_dot, np.cos(theta), np.sin(theta), theta_dot])
+        
+        x, x_dot, cos_theta, sin_theta, theta_dot = obs
+        theta = self.state[2]
+        
+        reward_theta = (cos_theta + 1.0) / 2.0
+        reward_x = np.cos(x * (np.pi / 2.0))
+        reward_bonus = 0.0
+        if np.cos(theta) > 0.999:
+            reward_bonus = 0.5
+        reward = reward_theta * reward_x + reward_bonus
+        if terminated:
+            reward = -1.0
+            
+        return reward
 
-        # 1. Angle reward (primary objective)
-        # Target orientation: (sin=0, cos=-1)
-        # Use cosine similarity between current and target orientation
-        target_cos = -1.0
-        angle_reward = 1.0 + (
-            cos_theta * target_cos
-        )  # Ranges from 0 (down) to 2 (upright)
-
-        # 2. Angular velocity penalty
-        # angular_vel_penalty = 0.1 * theta_dot ** 2
-
-        # 3. Position penalty (keep cart centered)
-        position_penalty = 0.2 * x**2
-
-        # 4. Velocity penalty (prevent rapid movements)
-        # velocity_penalty = 0.05 * x_dot ** 2
-
-        # 5. Action penalty (encourage minimal control)
-        # action_penalty = 0.01 * abs(action - 1)  # action is 0,1,2 mapped to -1,0,+1
-
-        # Combine components
-        total_reward = (
-            angle_reward
-            + (-1000 if terminated else 0)
-            # - angular_vel_penalty
-            - position_penalty
-            # - velocity_penalty
-            # - action_penalty
-        )
-
-        # Add survival bonus if upright
-        if angle_reward > 1.9:  # Close to perfect upright
-            total_reward += 0.5
-
-        return total_reward
-
-    def _update_gui_and_data(
-        self,
-        obs: np.ndarray,
-        reward: float,
-        action: np.ndarray,
-        terminated: bool,
-        truncated: bool,
-    ) -> None:
-        # Store episode data
-        self.episode_data["timesteps"].append(self.step_count)
-        self.episode_data["states"].append(obs)
-        self.episode_data["rewards"].append(reward)
-        self.episode_data["actions"].append(action)
-
-    def _clear_episode_data(self) -> None:
-        for key in self.episode_data:
-            self.episode_data[key].clear()
-
-    def render(self) -> None:
-        """Optional render method for additional visualization"""
-        pass
-
-    def close(self) -> None:
-        """Clean up resources"""
+    def __del__(self) -> None:
         self.client.close()

@@ -69,22 +69,23 @@ class SerialCommunicator:
                     continue
                 
                 if response.get("id") == request_id:
+                    # print(time.time() - start_time)
                     return response
                 else:
                     self.handle_async_message(response)
 
             # Sleep to prevent busy waiting
-            time.sleep(0.01)
+            time.sleep(0.0001)
 
     def sense(self, timeout: float = 5) -> Dict[str, Any]:
         """Send a sense command and wait for the response."""
         return self._send_command("sense", timeout=timeout)
 
-    def move(self, distance: int, timeout: float = 5) -> Dict[str, Any]:
+    def move(self, distance: int, timeout: float = 0.1) -> Dict[str, Any]:
         """Send a move command with the specified distance and wait for the response."""
         return self._send_command("move", {"distance": distance}, timeout=timeout)
 
-    def reset(self, timeout: float = 30) -> Dict[str, Any]:
+    def reset(self, timeout: float = 0.1) -> Dict[str, Any]:
         """Send a reset command and wait for the response."""
         return self._send_command("reset", timeout=timeout)
 

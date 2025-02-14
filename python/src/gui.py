@@ -588,7 +588,7 @@ class PendulumVisualizerDPG:
         dpg.set_value(self.angle_cos_series, [x_data_cos, y_data_cos])
 
         dpg.set_value(
-            "angle_text", f"Angle: {self.continuous_angle(self.state['theta']):.2f} rad"
+            "angle_text", f"Angle: {self.state['theta']:.2f} rad"
         )
 
         # Update angular velocity chart data
