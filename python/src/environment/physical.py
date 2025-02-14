@@ -6,21 +6,22 @@ import math
 
 
 class InvertedPendulumContinuousControlPhysical(gym.Env):
-    metadata = {"render_modes": ["human"]}
+    metadata = {
+        "render_modes": ["human", "rgb_array"],
+        "render_fps": 50,
+    }
 
     def __init__(
         self,
-        client,
-        max_episode_steps: int = 500,
-        step_size: float = 0.1,
-        data_queue=None,
+        render_mode: str = "human",
     ):
         super().__init__()
 
         self.client = client
         self.max_episode_steps = max_episode_steps
-        self.step_size = step_size  # Physical distance per action unit
-        self.data_queue = data_queue
+
+        self.t = 0  # timestep
+        self.t_limit = 1000
 
         # Discrete action space: -1 (left), 0 (stay), +1 (right)
         self.action_space = gym.spaces.Discrete(3)
