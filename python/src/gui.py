@@ -435,7 +435,7 @@ class PendulumVisualizerDPG:
 
     def run(self):
         """Main update loop"""
-        while dpg.is_dearpygui_running():
+        while dpg.is_dearpygui_running() and not self.stopped:
             self.update()
             dpg.render_dearpygui_frame()
 
