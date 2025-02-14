@@ -119,7 +119,7 @@ class SACAgent:
             action, _ = self.actor.sample(state)
         return action.detach().cpu().numpy()[0]
 
-    def save_checkpoint(self, filename="checkpoint.pth.tar"):
+    def save_checkpoint(self, filename="checkpoint.pth.tar", directory="models/"):
         checkpoint = {
             "actor_state_dict": self.actor.state_dict(),
             "critic1_state_dict": self.critic1.state_dict(),
@@ -133,11 +133,11 @@ class SACAgent:
             "log_alpha": self.log_alpha,
             "alpha": self.alpha,
         }
-        torch.save(checkpoint, filename)
-        return filename
+        torch.save(checkpoint, directory + filename)
+        return directory + filename
 
-    def load_checkpoint(self, filename, device):
-        checkpoint = torch.load(filename, map_location=device)
+    def load_checkpoint(self, filename, device, directory="models/"):
+        checkpoint = torch.load(directory + filename, map_location=device)
         self.actor.load_state_dict(checkpoint["actor_state_dict"])
         self.critic1.load_state_dict(checkpoint["critic1_state_dict"])
         self.critic2.load_state_dict(checkpoint["critic2_state_dict"])

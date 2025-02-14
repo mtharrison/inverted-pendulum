@@ -1,0 +1,7 @@
+{"time":"2025-02-14T09:38:40.529506Z","level":"INFO","msg":"stream: starting","core version":"0.19.6","symlink path":"/Users/matt/Developer/embedded/inverted_pendulum/python/src/wandb/run-20250214_093840-njr0t5hk/logs/debug-core.log"}
+{"time":"2025-02-14T09:38:40.726086Z","level":"INFO","msg":"created new stream","id":"njr0t5hk"}
+{"time":"2025-02-14T09:38:40.726139Z","level":"INFO","msg":"stream: started","id":"njr0t5hk"}
+{"time":"2025-02-14T09:38:40.72616Z","level":"INFO","msg":"sender: started","stream_id":"njr0t5hk"}
+{"time":"2025-02-14T09:38:40.726157Z","level":"INFO","msg":"handler: started","stream_id":"njr0t5hk"}
+{"time":"2025-02-14T09:38:40.726178Z","level":"INFO","msg":"writer: Do: started","stream_id":"njr0t5hk"}
+{"time":"2025-02-14T09:38:41.243018Z","level":"INFO","msg":"Starting system monitor"}

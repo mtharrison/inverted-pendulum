@@ -1,0 +1,23 @@
+Exception in thread Thread-1 (train):
+Traceback (most recent call last):
+  File [35m"/Users/matt/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/threading.py"[0m, line [35m1041[0m, in [35m_bootstrap_inner[0m
+    [31mself.run[0m[1;31m()[0m
+    [31m~~~~~~~~[0m[1;31m^^[0m
+  File [35m"/Users/matt/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/threading.py"[0m, line [35m992[0m, in [35mrun[0m
+    [31mself._target[0m[1;31m(*self._args, **self._kwargs)[0m
+    [31m~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/Users/matt/Developer/embedded/inverted_pendulum/python/src/train.py"[0m, line [35m149[0m, in [35mtrain[0m
+    [31magent.save_checkpoint[0m[1;31m(filename)[0m
+    [31m~~~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^[0m
+  File [35m"/Users/matt/Developer/embedded/inverted_pendulum/python/src/agent/sac.py"[0m, line [35m136[0m, in [35msave_checkpoint[0m
+    [31mtorch.save[0m[1;31m(checkpoint, directory + filename)[0m
+    [31m~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/Users/matt/Developer/embedded/inverted_pendulum/python/.venv/lib/python3.13/site-packages/torch/serialization.py"[0m, line [35m943[0m, in [35msave[0m
+    with [31m_open_zipfile_writer[0m[1;31m(f)[0m as opened_zipfile:
+         [31m~~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^[0m
+  File [35m"/Users/matt/Developer/embedded/inverted_pendulum/python/.venv/lib/python3.13/site-packages/torch/serialization.py"[0m, line [35m810[0m, in [35m_open_zipfile_writer[0m
+    return container(name_or_buffer)
+  File [35m"/Users/matt/Developer/embedded/inverted_pendulum/python/.venv/lib/python3.13/site-packages/torch/serialization.py"[0m, line [35m781[0m, in [35m__init__[0m
+    super().__init__([31mtorch._C.PyTorchFileWriter[0m[1;31m(self.name, _compute_crc32)[0m)
+                     [31m~~~~~~~~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mRuntimeError[0m: [35mParent directory models/models does not exist.[0m

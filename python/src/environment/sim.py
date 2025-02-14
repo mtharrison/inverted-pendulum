@@ -17,12 +17,12 @@ class InvertedPendulumContinuousControlSim(Env):
     def __init__(self, render_mode="human"):
         self.g = 9.82  # gravity
         self.m_c = 0.5  # cart mass
-        self.m_p = 0.5  # pendulum mass
+        self.m_p = 0.1  # pendulum mass
         self.total_m = self.m_p + self.m_c
-        self.l = 0.6  # pole's length
+        self.l = 0.25  # pole's length
         self.m_p_l = self.m_p * self.l
         self.force_mag = 10.0
-        self.dt = 0.01  # seconds between state updates
+        self.dt = 0.001  # seconds between state updates
         self.b = 1.0  # friction coefficient
 
         self.t = 0  # timestep
@@ -30,7 +30,7 @@ class InvertedPendulumContinuousControlSim(Env):
 
         # Thresholds
         self.theta_threshold_radians = 12 * 2 * math.pi / 360
-        self.x_threshold = 2.4
+        self.x_threshold = 0.5
 
         # Observation and action spaces
         high = np.array(

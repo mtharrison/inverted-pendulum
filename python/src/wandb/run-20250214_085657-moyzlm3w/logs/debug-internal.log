@@ -1,0 +1,15 @@
+{"time":"2025-02-14T08:56:57.724374Z","level":"INFO","msg":"stream: starting","core version":"0.19.6","symlink path":"/Users/matt/Developer/embedded/inverted_pendulum/python/src/wandb/run-20250214_085657-moyzlm3w/logs/debug-core.log"}
+{"time":"2025-02-14T08:56:57.836117Z","level":"INFO","msg":"created new stream","id":"moyzlm3w"}
+{"time":"2025-02-14T08:56:57.83617Z","level":"INFO","msg":"stream: started","id":"moyzlm3w"}
+{"time":"2025-02-14T08:56:57.836223Z","level":"INFO","msg":"handler: started","stream_id":"moyzlm3w"}
+{"time":"2025-02-14T08:56:57.836269Z","level":"INFO","msg":"sender: started","stream_id":"moyzlm3w"}
+{"time":"2025-02-14T08:56:57.836199Z","level":"INFO","msg":"writer: Do: started","stream_id":"moyzlm3w"}
+{"time":"2025-02-14T08:56:58.160941Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-02-14T08:57:20.765253Z","level":"INFO","msg":"stream: closing","id":"moyzlm3w"}
+{"time":"2025-02-14T08:57:20.765289Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-02-14T08:57:20.766146Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-02-14T08:57:21.722106Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-02-14T08:57:21.972086Z","level":"INFO","msg":"handler: closed","stream_id":"moyzlm3w"}
+{"time":"2025-02-14T08:57:21.972168Z","level":"INFO","msg":"writer: Close: closed","stream_id":"moyzlm3w"}
+{"time":"2025-02-14T08:57:21.972457Z","level":"INFO","msg":"sender: closed","stream_id":"moyzlm3w"}
+{"time":"2025-02-14T08:57:21.972647Z","level":"INFO","msg":"stream: closed","id":"moyzlm3w"}

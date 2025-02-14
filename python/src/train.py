@@ -6,6 +6,7 @@ import random
 import math
 import wandb
 import threading
+import time
 
 from queue import Queue
 from environment.sim import InvertedPendulumContinuousControlSim
@@ -13,7 +14,7 @@ from agent.sac import SACAgent, ReplayBuffer
 from gui import PendulumVisualizerDPG
 
 
-def train():
+def train(data_queue):
     # Hyperparameters
     state_dim = 5
     action_dim = 1
@@ -63,26 +64,66 @@ def train():
     buffer = ReplayBuffer(buffer_size)
     scores = []
     avg_scores = []
+    start_time = time.time()
 
     for episode in range(start_episode, max_episodes):
         state, _ = env.reset()
         episode_reward = 0
         episode_losses = []
 
+        before_step = time.time()
         for step in range(max_steps):
+            episode_start_time = time.time()
             action = agent.select_action(state)
+
             next_state, reward, terminated, truncated, _ = env.step(action)
-            env.render()
+
+            # env.render()
+
+            current_position, velocity, _, _, angular_velocity = next_state
+            data_queue.put(
+                {
+                    "type": "observation",
+                    "data": {
+                        "theta": env.state[2],
+                        "angular_velocity": angular_velocity,
+                        "current_position": current_position,
+                        "target_position": current_position,
+                        "velocity": velocity,
+                        "limitL": terminated,
+                        "limitR": terminated,
+                        "enabled": True,
+                        "resetting": False,
+                        "extent": env.x_threshold,
+                    },
+                }
+            )
             done = terminated or truncated
 
             buffer.add(state, action, reward, next_state, done)
             episode_reward += reward
 
+            before_step = time.time()
+
             if len(buffer.storage) > batch_size:
                 losses = agent.update_parameters(buffer, batch_size)
                 episode_losses.append(losses)
 
+            print(f"Step time: {time.time() - before_step:.2f}s")
+
             state = next_state
+
+            data_queue.put(
+                {
+                    "type": "training",
+                    "data": {
+                        "episode": f"{episode}/{max_episodes}",
+                        "total time": f"{time.time() - start_time:.2f}s",
+                        "episode time": f"{time.time() - episode_start_time:.2f}s",
+                    },
+                }
+            )
+
             if done:
                 break
 
@@ -98,15 +139,25 @@ def train():
         avg_score = np.mean(scores[-100:])
         avg_scores.append(avg_score)
 
+        data_queue.put(
+            {
+                "type": "episode",
+                "data": {
+                    "reward": episode_reward,
+                    "average_reward": avg_score,
+                },
+            }
+        )
+
         # Save best model
         if avg_score > best_avg_score:
             best_avg_score = avg_score
             filename = f"best_model_{episode}.pth.tar"
-            agent.save_checkpoint(filename)
+            path = agent.save_checkpoint(filename)
             if args.use_wandb:
-                wandb.save(filename)
-                artifact = wandb.Artifact(f"best-model", type="model")
-                artifact.add_file(filename)
+                wandb.save(path)
+                artifact = wandb.Artifact("best-model", type="model")
+                artifact.add_file(path)
                 wandb.log_artifact(artifact)
 
         # Save checkpoint periodically
@@ -147,9 +198,11 @@ def train():
 
 def main():
     data_queue = Queue()
+    # train(data_queue)
+    # return
 
     if os.getenv("DEV", False):
-        thrain_thread = threading.Thread(target=train, args=(data_queue))
+        thrain_thread = threading.Thread(target=train, args=(data_queue,))
         thrain_thread.start()
 
         visualizer = PendulumVisualizerDPG(data_queue=data_queue)
@@ -171,4 +224,4 @@ def main():
 
 
 if __name__ == "__main__":
-    train()
+    main()
