@@ -2,8 +2,6 @@ import argparse
 import numpy as np
 import torch
 import os
-import random
-import math
 import wandb
 import threading
 import time
@@ -11,11 +9,12 @@ import signal
 
 from queue import Queue
 from environment.sim import InvertedPendulumContinuousControlSim
+from environment.physical import InvertedPendulumContinuousControlPhysical
 from agent.sac import SACAgent, ReplayBuffer
 from gui import PendulumVisualizerDPG
 
 
-def train(data_queue, signal_queue):
+def train(environment_class, data_queue, signal_queue):
     # Hyperparameters
     state_dim = 5
     action_dim = 1
@@ -51,7 +50,7 @@ def train(data_queue, signal_queue):
         )
 
     # Initialize environment and agent
-    env = InvertedPendulumContinuousControlSim(render_mode="human")
+    env = environment_class(render_mode="human")
     agent = SACAgent(state_dim, action_dim, device, gamma, tau, alpha, lr)
 
     # Resume training if specified
@@ -209,42 +208,33 @@ def train(data_queue, signal_queue):
 def main():
     data_queue = Queue()
     signal_queue = Queue()
-    # train(data_queue)
-    # return
 
     if os.getenv("DEV", False):
-        thrain_thread = threading.Thread(
-            target=train,
-            args=(
-                data_queue,
-                signal_queue,
-            ),
-        )
-        thrain_thread.start()
-
-        visualizer = PendulumVisualizerDPG(data_queue=data_queue)
-
-        # handle ctrl+c
-        def signal_handler(sig, frame):
-            signal_queue.put({"type": "stop"})
-
-        signal.signal(signal.SIGINT, signal_handler)
-
-        visualizer.run()
-
-        thrain_thread.join()
+        environment_class = InvertedPendulumContinuousControlSim
     else:
-        # port = os.getenv("SERIAL_PORT", "/dev/cu.usbmodem2101")
-        # thrain_thread = threading.Thread(
-        #     target=training_thread, args=(port, data_queue)
-        # )
-        # thrain_thread.start()
+        environment_class = InvertedPendulumContinuousControlPhysical
 
-        # visualizer = PendulumVisualizerDPG(data_queue=data_queue)
-        # visualizer.run()
+    thrain_thread = threading.Thread(
+        target=train,
+        args=(
+            environment_class,
+            data_queue,
+            signal_queue,
+        ),
+    )
+    thrain_thread.start()
 
-        # thrain_thread.join()
-        pass
+    visualizer = PendulumVisualizerDPG(data_queue=data_queue)
+
+    # handle ctrl+c
+    def signal_handler(sig, frame):
+        signal_queue.put({"type": "stop"})
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+    visualizer.run()
+
+    thrain_thread.join()
 
 
 if __name__ == "__main__":

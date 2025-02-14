@@ -86,20 +86,20 @@ void communicate(void* parameters) {
                 xSemaphoreGive(dataMutex);
             }
             else if (command == "move") {
-                long distance = request["params"]["distance"].as<long>();
+                // long distance = request["params"]["distance"].as<long>();
 
-                xSemaphoreTake(dataMutex, portMAX_DELAY);
-                if (motorState.enabled) {
-                    motorState.target_position += distance;
-                }
-                response["target_position"] = motorState.target_position; 
-                xSemaphoreGive(dataMutex);
+                // xSemaphoreTake(dataMutex, portMAX_DELAY);
+                // if (motorState.enabled) {
+                //     motorState.target_position += distance;
+                // }
+                // response["target_position"] = motorState.target_position; 
+                // xSemaphoreGive(dataMutex);
             }
             else if (command == "reset") {
-                xSemaphoreTake(dataMutex, portMAX_DELAY);
-                motorState.resetting = true;
-                xSemaphoreGive(dataMutex);
-                xEventGroupSetBits(resetEventGroup, RESET_BIT);
+                // xSemaphoreTake(dataMutex, portMAX_DELAY);
+                // motorState.resetting = true;
+                // xSemaphoreGive(dataMutex);
+                // xEventGroupSetBits(resetEventGroup, RESET_BIT);
             }
             else {
                 response["status"] = "ERROR";
@@ -154,7 +154,7 @@ void monitor(void* parameters) {
 
             float velocity = (currentPosition - lastPosition) / dt;
             filtered_velocity = VELOCITY_FILTER_ALPHA * velocity +
-                (1 - VELOCITY_FILTER_ALPHA) * filtered_velocity;    
+                (1 - VELOCITY_FILTER_ALPHA) * filtered_velocity;
         }
 
         lastTheta = newTheta;
@@ -221,7 +221,7 @@ void act(void* parameters) {
             long leftPosition = stepper.currentPosition();
             stepper.setCurrentPosition(leftPosition);
 
-            
+
             long center = (rightPosition + leftPosition) / 2;
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
             stepper.moveTo(center);
