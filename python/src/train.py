@@ -109,7 +109,7 @@ def train(data_queue):
                 losses = agent.update_parameters(buffer, batch_size)
                 episode_losses.append(losses)
 
-            print(f"Step time: {time.time() - before_step:.2f}s")
+            # print(f"  / time: {time.time() - before_step:.2f}s")
 
             state = next_state
 
