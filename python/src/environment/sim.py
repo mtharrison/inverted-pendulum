@@ -22,7 +22,7 @@ class InvertedPendulumContinuousControlSim(Env):
         self.l = 0.25  # pole's length
         self.m_p_l = self.m_p * self.l
         self.force_mag = 10.0
-        self.dt = 0.01  # seconds between state updates
+        self.dt = 0.005  # seconds between state updates
         self.b = 1.0  # friction coefficient
 
         self.t = 0  # timestep

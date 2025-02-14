@@ -7,6 +7,7 @@ import math
 import wandb
 import threading
 import time
+import signal
 
 from queue import Queue
 from environment.sim import InvertedPendulumContinuousControlSim
@@ -14,7 +15,7 @@ from agent.sac import SACAgent, ReplayBuffer
 from gui import PendulumVisualizerDPG
 
 
-def train(data_queue):
+def train(data_queue, signal_queue):
     # Hyperparameters
     state_dim = 5
     action_dim = 1
@@ -67,6 +68,15 @@ def train(data_queue):
     start_time = time.time()
 
     for episode in range(start_episode, max_episodes):
+        if not signal_queue.empty():
+            signal = signal_queue.get()
+            if signal["type"] == "stop":
+                data_queue.put({"type": "stop"})
+                if args.use_wandb:
+                    print("Finishing W&B run...")
+                    wandb.finish()
+                return
+
         state, _ = env.reset()
         episode_reward = 0
         episode_losses = []
@@ -198,14 +208,28 @@ def train(data_queue):
 
 def main():
     data_queue = Queue()
+    signal_queue = Queue()
     # train(data_queue)
     # return
 
     if os.getenv("DEV", False):
-        thrain_thread = threading.Thread(target=train, args=(data_queue,))
+        thrain_thread = threading.Thread(
+            target=train,
+            args=(
+                data_queue,
+                signal_queue,
+            ),
+        )
         thrain_thread.start()
 
         visualizer = PendulumVisualizerDPG(data_queue=data_queue)
+
+        # handle ctrl+c
+        def signal_handler(sig, frame):
+            signal_queue.put({"type": "stop"})
+
+        signal.signal(signal.SIGINT, signal_handler)
+
         visualizer.run()
 
         thrain_thread.join()

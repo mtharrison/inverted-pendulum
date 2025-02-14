@@ -3,9 +3,10 @@ from time import perf_counter
 import random
 import os
 import dearpygui.dearpygui as dpg
+
 from screeninfo import get_monitors
 
-MARGIN_AROUND_VIEWPORT = 200
+MARGIN_AROUND_VIEWPORT = 20
 FRAMES_PER_SECOND = 60
 
 
@@ -60,6 +61,8 @@ class PendulumVisualizerDPG:
             height=self.viewport_height,
         )
 
+        self.stopped = False
+
         self.init_pendulum_window()
         self.init_training_window()
 
@@ -67,6 +70,10 @@ class PendulumVisualizerDPG:
         dpg.show_style_editor()
         dpg.show_viewport()
         dpg.set_viewport_pos([0, 0])
+
+    def stop(self):
+        self.stopped = True
+        dpg.stop_dearpygui()
 
     def init_pendulum_window(self):
         with dpg.window(
@@ -410,8 +417,13 @@ class PendulumVisualizerDPG:
             if item["type"] == "episode":
                 self.reward_history.append(item["data"]["reward"])
                 self.avg_reward_history.append(item["data"]["average_reward"])
+            if item["type"] == "stop":
+                self.stop()
+                return
 
     def update(self):
+        if self.stopped:
+            return
         """Update the pendulum and charts with the latest data."""
         now = perf_counter()
         if now - self.last_update >= self.update_interval:
