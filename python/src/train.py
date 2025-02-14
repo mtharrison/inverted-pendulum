@@ -1,10 +1,16 @@
 import argparse
 import numpy as np
 import torch
+import os
+import random
+import math
 import wandb
+import threading
 
+from queue import Queue
 from environment.sim import InvertedPendulumContinuousControlSim
 from agent.sac import SACAgent, ReplayBuffer
+from gui import PendulumVisualizerDPG
 
 
 def train():
@@ -137,6 +143,31 @@ def train():
     env.close()
     if args.use_wandb:
         wandb.finish()
+
+
+def main():
+    data_queue = Queue()
+
+    if os.getenv("DEV", False):
+        thrain_thread = threading.Thread(target=train, args=(data_queue))
+        thrain_thread.start()
+
+        visualizer = PendulumVisualizerDPG(data_queue=data_queue)
+        visualizer.run()
+
+        thrain_thread.join()
+    else:
+        # port = os.getenv("SERIAL_PORT", "/dev/cu.usbmodem2101")
+        # thrain_thread = threading.Thread(
+        #     target=training_thread, args=(port, data_queue)
+        # )
+        # thrain_thread.start()
+
+        # visualizer = PendulumVisualizerDPG(data_queue=data_queue)
+        # visualizer.run()
+
+        # thrain_thread.join()
+        pass
 
 
 if __name__ == "__main__":
