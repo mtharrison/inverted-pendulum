@@ -12,7 +12,7 @@
 
 struct PendulumState {
     int32_t current_position = 0;
-    int32_t target_position = 0;
+    double speed = 0;
     double theta = 0;
     double velocity = 0;
     double angular_velocity = 0;
@@ -40,15 +40,6 @@ void DEBUG(const char* message, ...) {
 }
 
 EventGroupHandle_t resetEventGroup = xEventGroupCreate();
-
-void handle_move_command(int action) {
-    if (xSemaphoreTake(dataMutex, portMAX_DELAY)) {
-        if (motorState.enabled) {
-            motorState.target_position += action;
-        }
-        xSemaphoreGive(dataMutex);
-    }
-}
 
 void communicate(void* parameters) {
     JsonDocument request;
@@ -79,27 +70,27 @@ void communicate(void* parameters) {
                 response["angular_velocity"] = motorState.angular_velocity;
                 response["limitL"] = motorState.limitL;
                 response["limitR"] = motorState.limitR;
-                response["target_position"] = motorState.target_position;
+                response["speed"] = motorState.speed;
                 response["enabled"] = motorState.enabled;
                 response["resetting"] = motorState.resetting;
                 response["extent"] = motorState.extent;
                 xSemaphoreGive(dataMutex);
             }
             else if (command == "move") {
-                // long distance = request["params"]["distance"].as<long>();
+                double speed = request["params"]["speed"].as<long>();
 
-                // xSemaphoreTake(dataMutex, portMAX_DELAY);
-                // if (motorState.enabled) {
-                //     motorState.target_position += distance;
-                // }
-                // response["target_position"] = motorState.target_position; 
-                // xSemaphoreGive(dataMutex);
+                xSemaphoreTake(dataMutex, portMAX_DELAY);
+                if (motorState.enabled) {
+                    motorState.speed = speed * MAX_SPEED;
+                }
+                response["speed"] = motorState.speed;
+                xSemaphoreGive(dataMutex);
             }
             else if (command == "reset") {
-                // xSemaphoreTake(dataMutex, portMAX_DELAY);
-                // motorState.resetting = true;
-                // xSemaphoreGive(dataMutex);
-                // xEventGroupSetBits(resetEventGroup, RESET_BIT);
+                xSemaphoreTake(dataMutex, portMAX_DELAY);
+                motorState.resetting = true;
+                xSemaphoreGive(dataMutex);
+                xEventGroupSetBits(resetEventGroup, RESET_BIT);
             }
             else {
                 response["status"] = "ERROR";
@@ -110,7 +101,7 @@ void communicate(void* parameters) {
             Serial.println();
         }
 
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
 
@@ -180,7 +171,7 @@ void act(void* parameters) {
     for (;;) {
         xSemaphoreTake(dataMutex, portMAX_DELAY);
         bool enabled = motorState.enabled;
-        int32_t target = motorState.target_position;
+        double speed = motorState.speed;
         bool limitStateL = motorState.limitL;
         bool limitStateR = motorState.limitR;
         xSemaphoreGive(dataMutex);
@@ -193,7 +184,7 @@ void act(void* parameters) {
         }
 
         if (xEventGroupGetBits(resetEventGroup) & RESET_BIT) {
-            stepper.setMaxSpeed(SAFE_SPEED);
+            stepper.setSpeed(SAFE_SPEED);
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
             stepper.moveTo(100000);
             while (!limitStateR) {
@@ -230,19 +221,19 @@ void act(void* parameters) {
 
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             motorState.current_position = 0;
-            motorState.target_position = 0;
+            motorState.speed = 0;
             motorState.enabled = true;
             motorState.resetting = false;
             motorState.extent = abs(center - leftPosition);
             xSemaphoreGive(dataMutex);
             xEventGroupClearBits(resetEventGroup, RESET_BIT);
-            stepper.setMaxSpeed(MAX_SPEED);
+            stepper.setSpeed(0);
             continue;
         }
 
         if (enabled) {
-            stepper.moveTo(target);
-            stepper.run();
+            stepper.setSpeed(speed);
+            stepper.runSpeed();
 
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             motorState.current_position = stepper.currentPosition();
