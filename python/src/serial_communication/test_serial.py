@@ -1,6 +1,6 @@
-from serial_client import SerialCommunicator
-from serial_virtual import VirtualSerialPair
-from serial_mock import MockSerialEndpoint
+from client import SerialCommunicator
+from virtual import VirtualSerialPair
+from mock import MockSerialEndpoint
 
 
 def create_mock(port):
