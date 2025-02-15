@@ -1,7 +1,5 @@
 import math
 from time import perf_counter
-import random
-import os
 import dearpygui.dearpygui as dpg
 
 from screeninfo import get_monitors
@@ -71,9 +69,12 @@ class PendulumVisualizerDPG:
         dpg.show_viewport()
         dpg.set_viewport_pos([0, 0])
 
+        dpg.set_exit_callback(self.stop)
+
     def stop(self):
+        print("Stopping GUI..")
+        self.data_queue = None
         self.stopped = True
-        dpg.stop_dearpygui()
 
     def init_pendulum_window(self):
         with dpg.window(
@@ -441,6 +442,7 @@ class PendulumVisualizerDPG:
 
         # Cleanup
         self.running = False
+        dpg.stop_dearpygui()
         dpg.destroy_context()
 
     def draw_pendulum(self):
@@ -587,9 +589,7 @@ class PendulumVisualizerDPG:
         y_data_cos = self.angle_cos_history[-number_of_points:]
         dpg.set_value(self.angle_cos_series, [x_data_cos, y_data_cos])
 
-        dpg.set_value(
-            "angle_text", f"Angle: {self.state['theta']:.2f} rad"
-        )
+        dpg.set_value("angle_text", f"Angle: {self.state['theta']:.2f} rad")
 
         # Update angular velocity chart data
         x_data_vel = list(range(len(self.angular_velocity_history)))[-number_of_points:]

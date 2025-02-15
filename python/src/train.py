@@ -67,15 +67,6 @@ def train(environment_class, data_queue, signal_queue):
     start_time = time.time()
 
     for episode in range(start_episode, max_episodes):
-        if not signal_queue.empty():
-            signal = signal_queue.get()
-            if signal["type"] == "stop":
-                data_queue.put({"type": "stop"})
-                if args.use_wandb:
-                    print("Finishing W&B run...")
-                    wandb.finish()
-                return
-
         state, _ = env.reset()
         episode_reward = 0
         episode_losses = []
@@ -83,6 +74,16 @@ def train(environment_class, data_queue, signal_queue):
         before_step = time.time()
         episode_start_time = time.time()
         for step in range(max_steps):
+            if not signal_queue.empty():
+                signal = signal_queue.get()
+                if signal["type"] == "stop":
+                    print("Stopping training...")
+                    data_queue.put({"type": "stop"})
+                    if args.use_wandb:
+                        print("Finishing W&B run...")
+                        wandb.finish()
+                    return
+
             action = agent.select_action(state)
 
             next_state, reward, terminated, truncated, _ = env.step(action)
@@ -117,8 +118,6 @@ def train(environment_class, data_queue, signal_queue):
             if len(buffer.storage) > batch_size:
                 losses = agent.update_parameters(buffer, batch_size)
                 episode_losses.append(losses)
-
-            # print(f"  / time: {time.time() - before_step:.2f}s")
 
             state = next_state
 
@@ -209,7 +208,7 @@ def train(environment_class, data_queue, signal_queue):
 def main():
     data_queue = Queue()
     signal_queue = Queue()
-    
+
     if os.getenv("DEV", False) == "true":
         environment_class = InvertedPendulumContinuousControlSim
     else:
@@ -234,6 +233,8 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
 
     visualizer.run()
+
+    signal_queue.put({"type": "stop"})
 
     thrain_thread.join()
 

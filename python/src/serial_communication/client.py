@@ -33,7 +33,7 @@ class SerialCommunicator:
         self.next_request_id += 1
 
         message = {"id": request_id, "command": command}
-        
+
         if params is not None:
             message["params"] = params
         message_str = json.dumps(message) + "\n"
@@ -67,9 +67,8 @@ class SerialCommunicator:
                         line.decode("utf-8", errors="replace") + Style.RESET_ALL,
                     )
                     continue
-                
+
                 if response.get("id") == request_id:
-                    # print(time.time() - start_time)
                     return response
                 else:
                     self.handle_async_message(response)

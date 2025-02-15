@@ -1,4 +1,6 @@
 gui:
-  (cd python/src && uv run watchgod gui.launch)
+  (cd python/src && uv run watchgod train.main)
 dgui:
-  (cd python/src && ENVIRONMENT=dev uv run watchgod gui.launch)
+  (cd python/src && DEV=true uv run train.py)
+dwgui:
+  (cd python/src && DEV=true uv run watchgod train.main)
