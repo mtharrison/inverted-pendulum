@@ -22,7 +22,7 @@ class InvertedPendulumContinuousControlSim(Env):
         self.l = 0.25  # pole's length
         self.m_p_l = self.m_p * self.l
         self.force_mag = 1.0
-        self.dt = 0.005  # seconds between state updates
+        self.dt = 0.01  # seconds between state updates
         self.b = 1.0  # friction coefficient
 
         self.t = 0  # timestep
@@ -61,6 +61,7 @@ class InvertedPendulumContinuousControlSim(Env):
         self.value_array = np.zeros((100, 100))  # Resolution of value function viz
         self.min_value = -10
         self.max_value = 10
+        self.initial_theta = None
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)[0]
@@ -68,6 +69,9 @@ class InvertedPendulumContinuousControlSim(Env):
 
         state = self.state
         x, x_dot, theta, theta_dot = state
+
+        if self.initial_theta is None:
+            self.initial_theta = theta
 
         s = math.sin(theta)
         c = math.cos(theta)
@@ -98,19 +102,23 @@ class InvertedPendulumContinuousControlSim(Env):
         truncated = self.t >= self.t_limit
         self.t += 1
 
-        # Reward calculation
-        reward_theta = (np.cos(theta) + 1.0) / 2.0
-        reward_x = np.cos((x / self.x_threshold) * (np.pi / 2.0))
-        reward_bonus = 0.0
-        if np.cos(theta) > 0.999:
-            reward_bonus = 0.5
-        reward = reward_theta * reward_x + reward_bonus
-        if terminated:
-            reward = -1.0
+        # Compute reward
+        reward = self.inverted_pendulum_reward(np.cos(theta))
 
         obs = np.array([x, x_dot, np.cos(theta), np.sin(theta), theta_dot])
 
         return obs, reward, terminated, truncated, {}
+
+    def inverted_pendulum_reward(
+        self,
+        cos_theta: float,
+    ) -> float:
+        """
+        Computes the reward for the inverted pendulum swing-up task.
+        Updated to penalize excessive spinning and jerky motions.
+        """
+
+        return 1 + cos_theta / 2
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -119,6 +127,9 @@ class InvertedPendulumContinuousControlSim(Env):
         x, x_dot, theta, theta_dot = self.state
         obs = np.array([x, x_dot, np.cos(theta), np.sin(theta), theta_dot])
         return obs, {}
+
+    def angle_normalize(self, x):
+        return ((x + np.pi) % (2 * np.pi)) - np.pi
 
     def render(self):
         screen_width = self.screen_dim

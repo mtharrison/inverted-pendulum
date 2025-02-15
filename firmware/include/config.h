@@ -13,9 +13,9 @@
 
 // Motor Configuration
 #define MICROSTEPS          1600
-#define MAX_SPEED           (10000 * 10)
-#define MAX_ACCEL          (10000 * 2)
-#define SAFE_SPEED         5000
+#define MAX_SPEED           (2000)
+#define MAX_ACCEL          (10000)
+#define SAFE_SPEED         3000
 
 // Task Configuration
 #define TASK_STACK_SIZE    4096

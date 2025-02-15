@@ -319,6 +319,7 @@ class PendulumVisualizerDPG:
                 with dpg.table_row():
                     with dpg.group(tag="episode stats", horizontal=True):
                         dpg.add_text("Episode: 0/100", tag="episode_text")
+                        dpg.add_text("Step: 0/1000", tag="step_text")
                         dpg.add_text("Episode time: 0", tag="episode time_text")
                         dpg.add_text("Total time: 0", tag="total time_text")
 

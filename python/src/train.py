@@ -25,7 +25,7 @@ def train(environment_class, data_queue, signal_queue):
     gamma = 0.99
     tau = 0.005
     alpha = 0.2
-    lr = 3e-4
+    lr = 1e-3
 
     # Parse command line arguments
     parser = argparse.ArgumentParser()
@@ -128,6 +128,7 @@ def train(environment_class, data_queue, signal_queue):
                         "episode": f"{episode}/{max_episodes}",
                         "total time": f"{time.time() - start_time:.2f}s",
                         "episode time": f"{time.time() - episode_start_time:.2f}s",
+                        "step": f"{step}/{max_steps}",
                     },
                 }
             )
@@ -194,11 +195,11 @@ def train(environment_class, data_queue, signal_queue):
             f"Episode {episode + 1}, Reward: {episode_reward:.2f}, Avg Reward: {avg_score:.2f}"
         )
 
-        if avg_score >= 900:
-            print("Environment solved!")
-            if args.use_wandb:
-                wandb.finish()
-            break
+        # if avg_score >= 900:
+        #     print("Environment solved!")
+        #     if args.use_wandb:
+        #         wandb.finish()
+        #     break
 
     env.close()
     if args.use_wandb:

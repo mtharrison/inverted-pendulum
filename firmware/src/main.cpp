@@ -12,15 +12,15 @@
 
 struct PendulumState {
     int32_t current_position = 0;
-    double speed = 0;
-    double theta = 0;
-    double velocity = 0;
-    double angular_velocity = 0;
+    float speed = 0;
+    float theta = 0;
+    float velocity = 0;
+    float angular_velocity = 0;
     bool limitL = false;
     bool limitR = false;
     bool enabled = true;
     bool resetting = false;
-    long extent = 0;
+    int extent = 0;
 };
 
 // Shared data protection
@@ -77,7 +77,7 @@ void communicate(void* parameters) {
                 xSemaphoreGive(dataMutex);
             }
             else if (command == "move") {
-                double speed = request["params"]["speed"].as<long>();
+                float speed = request["params"]["speed"].as<float>();
 
                 xSemaphoreTake(dataMutex, portMAX_DELAY);
                 if (motorState.enabled) {
@@ -157,7 +157,7 @@ void monitor(void* parameters) {
         motorState.velocity = filtered_velocity;
         xSemaphoreGive(dataMutex);
 
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
 
@@ -171,7 +171,7 @@ void act(void* parameters) {
     for (;;) {
         xSemaphoreTake(dataMutex, portMAX_DELAY);
         bool enabled = motorState.enabled;
-        double speed = motorState.speed;
+        float speed = motorState.speed;
         bool limitStateL = motorState.limitL;
         bool limitStateR = motorState.limitR;
         xSemaphoreGive(dataMutex);
@@ -233,7 +233,7 @@ void act(void* parameters) {
 
         if (enabled) {
             stepper.setSpeed(speed);
-            stepper.runSpeed();
+            stepper.run();
 
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             motorState.current_position = stepper.currentPosition();
