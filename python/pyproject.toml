@@ -7,9 +7,12 @@ requires-python = ">=3.13"
 dependencies = [
     "colorama>=0.4.6",
     "dearpygui>=2.0.0",
+    "memray>=1.15.0",
+    "pygame>=2.6.1",
     "pyserial>=3.5",
     "pytest>=8.3.4",
     "ruff>=0.9.5",
     "screeninfo>=0.8.1",
+    "wandb>=0.19.6",
     "watchgod>=0.8.2",
 ]

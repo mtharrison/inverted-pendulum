@@ -142,7 +142,7 @@ void monitor(void* parameters) {
         lastTime = now;
 
         int32_t encoderCount = encoder.getCount();
-        float newTheta = encoderCount * ENCODER_TO_RAD;
+        float newTheta = (encoderCount * ENCODER_TO_RAD) + PI;
 
         long currentPosition = motorState.current_position;
 

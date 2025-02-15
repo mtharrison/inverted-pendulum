@@ -18,7 +18,7 @@ def train(environment_class, data_queue, signal_queue):
     # Hyperparameters
     state_dim = 5
     action_dim = 1
-    max_episodes = 1000
+    max_episodes = 10000
     max_steps = 1000
     batch_size = 256
     buffer_size = int(1e6)
@@ -147,6 +147,7 @@ def train(environment_class, data_queue, signal_queue):
         scores.append(episode_reward)
         avg_score = np.mean(scores[-100:])
         avg_scores.append(avg_score)
+        scores = scores[-100:]
 
         data_queue.put(
             {
