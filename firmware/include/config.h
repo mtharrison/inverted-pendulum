@@ -11,9 +11,8 @@
 #define LIMIT_L_PIN         12
 #define LIMIT_R_PIN         10
 
-// Motor Configuration
 #define MICROSTEPS          1600
-#define MAX_SPEED           (2000)
+#define MAX_SPEED           (3000)
 #define MAX_ACCEL          (10000)
 #define SAFE_SPEED         3000
 
