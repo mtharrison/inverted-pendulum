@@ -1,21 +1,55 @@
 #include "Arduino.h"
-#include <ArduinoJson.h>
 #include <AccelStepper.h>
-#include <ESP32Encoder.h>
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "limit.h"
-#include "config.h"
 
-#define RESET_BIT	    BIT0
-#define RESET_CLEAR_BIT	BIT1
+// Pin Definitions
+#define MOTOR_ENABLE_PIN     18
+#define STEP_PIN            16
+#define DIR_PIN             7
+#define ENCODER_PIN_A       13
+#define ENCODER_PIN_B       14
+#define LIMIT_L_PIN         12
+#define LIMIT_R_PIN         10
+
+// Motor Configuration
+#define MICROSTEPS          1600
+#define MAX_SPEED           (2000)
+#define MAX_ACCEL          (10000)
+#define SAFE_SPEED         3000
+
+// Task Configuration
+#define TASK_STACK_SIZE    4096
+#define TASK_PRIORITY_COMMUNICATE 3
+#define TASK_PRIORITY_MONITOR    4
+#define TASK_PRIORITY_ACT        5
+
+// Communication Configuration
+#define SERIAL_BUFFER_SIZE  256
+
+// Encoder Configuration
+#define ENCODER_STEPS_PER_REV 2400
+#define ENCODER_TO_RAD     (2 * PI / ENCODER_STEPS_PER_REV)
+
+// Filter Configuration
+#define VELOCITY_FILTER_ALPHA 0.1f
+
+// Communication Configuration
+#define SERIAL_BUFFER_SIZE  256
+
+void DEBUG(const char* message, ...) {
+    va_list args;
+    va_start(args, message);
+    char buffer[SERIAL_BUFFER_SIZE];
+    vsnprintf(buffer, SERIAL_BUFFER_SIZE, message, args);
+    va_end(args);
+    Serial.print("DEBUG: ");
+    Serial.println(buffer);
+}
 
 struct PendulumState {
     int32_t current_position = 0;
-    float speed = 0;
-    float theta = 0;
-    float velocity = 0;
-    float angular_velocity = 0;
     bool limitL = false;
     bool limitR = false;
     bool enabled = true;
@@ -29,94 +63,9 @@ SemaphoreHandle_t dataMutex = xSemaphoreCreateMutex();
 // Global state of the system
 PendulumState motorState;
 
-void DEBUG(const char* message, ...) {
-    va_list args;
-    va_start(args, message);
-    char buffer[SERIAL_BUFFER_SIZE];
-    vsnprintf(buffer, SERIAL_BUFFER_SIZE, message, args);
-    va_end(args);
-    Serial.print("DEBUG: ");
-    Serial.println(buffer);
-}
-
-EventGroupHandle_t resetEventGroup = xEventGroupCreate();
-
-void communicate(void* parameters) {
-    JsonDocument request;
-    char buffer[SERIAL_BUFFER_SIZE];
-
-    for (;;) {
-        if (Serial.available()) {
-            size_t len = Serial.readBytesUntil('\n', buffer, SERIAL_BUFFER_SIZE - 1);
-            buffer[len] = '\0';
-
-            DeserializationError error = deserializeJson(request, buffer);
-            if (error) {
-                DEBUG("Failed to parse JSON: %s", error.c_str());
-                continue;
-            }
-
-            int id = request["id"];
-            String command = String((const char*)request["command"]);
-            JsonDocument response;
-            response["id"] = id;
-            response["status"] = "OK";
-
-            if (command == "sense") {
-                xSemaphoreTake(dataMutex, portMAX_DELAY);
-                response["current_position"] = motorState.current_position;
-                response["velocity"] = motorState.velocity;
-                response["theta"] = motorState.theta;
-                response["angular_velocity"] = motorState.angular_velocity;
-                response["limitL"] = motorState.limitL;
-                response["limitR"] = motorState.limitR;
-                response["speed"] = motorState.speed;
-                response["enabled"] = motorState.enabled;
-                response["resetting"] = motorState.resetting;
-                response["extent"] = motorState.extent;
-                xSemaphoreGive(dataMutex);
-            }
-            else if (command == "move") {
-                float speed = request["params"]["speed"].as<float>();
-
-                xSemaphoreTake(dataMutex, portMAX_DELAY);
-                if (motorState.enabled) {
-                    motorState.speed = speed * MAX_SPEED;
-                }
-                response["speed"] = motorState.speed;
-                xSemaphoreGive(dataMutex);
-            }
-            else if (command == "reset") {
-                xSemaphoreTake(dataMutex, portMAX_DELAY);
-                motorState.resetting = true;
-                xSemaphoreGive(dataMutex);
-                xEventGroupSetBits(resetEventGroup, RESET_BIT);
-            }
-            else {
-                response["status"] = "ERROR";
-                response["message"] = "Invalid request type";
-            }
-
-            serializeJson(response, Serial);
-            Serial.println();
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(5));
-    }
-}
-
 void monitor(void* parameters) {
-    ESP32Encoder encoder;
-    encoder.attachFullQuad(ENCODER_PIN_A, ENCODER_PIN_B);
     LimitSwitch limitL(LIMIT_L_PIN);
     LimitSwitch limitR(LIMIT_R_PIN);
-
-    float filtered_angular_velocity = 0;
-    float filtered_velocity = 0;
-    int32_t lastPosition = 0;
-    int32_t lastTheta = 0;
-
-    int64_t lastTime = esp_timer_get_time();
 
     for (;;) {
         bool limitStateL = limitL.triggered();
@@ -125,36 +74,6 @@ void monitor(void* parameters) {
         xSemaphoreTake(dataMutex, portMAX_DELAY);
         motorState.limitL = limitStateL;
         motorState.limitR = limitStateR;
-        xSemaphoreGive(dataMutex);
-
-        // Update position and velocities
-        int64_t now = esp_timer_get_time();
-        float dt = (now - lastTime) / 1e6;
-        lastTime = now;
-
-        int32_t encoderCount = encoder.getCount();
-        float newTheta = (encoderCount * ENCODER_TO_RAD) + PI;
-
-        long currentPosition = motorState.current_position;
-
-
-        if (dt > 0) {
-            float angular_velocity = (newTheta - motorState.theta) / dt;
-            filtered_angular_velocity = VELOCITY_FILTER_ALPHA * angular_velocity +
-                (1 - VELOCITY_FILTER_ALPHA) * filtered_angular_velocity;
-
-            float velocity = (currentPosition - lastPosition) / dt;
-            filtered_velocity = VELOCITY_FILTER_ALPHA * velocity +
-                (1 - VELOCITY_FILTER_ALPHA) * filtered_velocity;
-        }
-
-        lastTheta = newTheta;
-        lastPosition = currentPosition;
-
-        xSemaphoreTake(dataMutex, portMAX_DELAY);
-        motorState.theta = newTheta;
-        motorState.angular_velocity = filtered_angular_velocity;
-        motorState.velocity = filtered_velocity;
         xSemaphoreGive(dataMutex);
 
         vTaskDelay(pdMS_TO_TICKS(5));
@@ -170,8 +89,6 @@ void act(void* parameters) {
 
     for (;;) {
         xSemaphoreTake(dataMutex, portMAX_DELAY);
-        bool enabled = motorState.enabled;
-        float speed = motorState.speed;
         bool limitStateL = motorState.limitL;
         bool limitStateR = motorState.limitR;
         xSemaphoreGive(dataMutex);
@@ -181,9 +98,9 @@ void act(void* parameters) {
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             motorState.enabled = false;
             xSemaphoreGive(dataMutex);
-        }
 
-        if (xEventGroupGetBits(resetEventGroup) & RESET_BIT) {
+            // RESET PROCEDURE
+
             stepper.setSpeed(SAFE_SPEED);
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
             stepper.moveTo(100000);
@@ -192,7 +109,7 @@ void act(void* parameters) {
                 xSemaphoreTake(dataMutex, portMAX_DELAY);
                 limitStateR = motorState.limitR;
                 xSemaphoreGive(dataMutex);
-                vTaskDelay(pdMS_TO_TICKS(1));
+                vTaskDelay(pdMS_TO_TICKS(0.1));
             }
 
             digitalWrite(MOTOR_ENABLE_PIN, LOW);
@@ -205,7 +122,7 @@ void act(void* parameters) {
                 xSemaphoreTake(dataMutex, portMAX_DELAY);
                 limitStateL = motorState.limitL;
                 xSemaphoreGive(dataMutex);
-                vTaskDelay(pdMS_TO_TICKS(1));
+                vTaskDelay(pdMS_TO_TICKS(0.1));
             }
 
             digitalWrite(MOTOR_ENABLE_PIN, LOW);
@@ -220,25 +137,23 @@ void act(void* parameters) {
             stepper.setCurrentPosition(0);
 
             xSemaphoreTake(dataMutex, portMAX_DELAY);
-            motorState.current_position = 0;
-            motorState.speed = 0;
             motorState.enabled = true;
             motorState.resetting = false;
             motorState.extent = abs(center - leftPosition);
+            DEBUG("Extent: %d", motorState.extent);
             xSemaphoreGive(dataMutex);
-            xEventGroupClearBits(resetEventGroup, RESET_BIT);
             stepper.setSpeed(0);
             continue;
         }
 
-        if (enabled) {
-            stepper.setSpeed(speed);
-            stepper.run();
+        // if (enabled) {
+        //     stepper.setSpeed(speed);
+        //     stepper.run();
 
-            xSemaphoreTake(dataMutex, portMAX_DELAY);
-            motorState.current_position = stepper.currentPosition();
-            xSemaphoreGive(dataMutex);
-        }
+        //     xSemaphoreTake(dataMutex, portMAX_DELAY);
+        //     motorState.current_position = stepper.currentPosition();
+        //     xSemaphoreGive(dataMutex);
+        // }
 
         vTaskDelay(pdMS_TO_TICKS(0.1));
     }
@@ -247,8 +162,8 @@ void act(void* parameters) {
 void setup() {
     Serial.begin(115200);
 
-    xTaskCreatePinnedToCore(communicate, "Communicate", TASK_STACK_SIZE, NULL,
-        TASK_PRIORITY_COMMUNICATE, NULL, 1);
+    // xTaskCreatePinnedToCore(communicate, "Communicate", TASK_STACK_SIZE, NULL,
+    //     TASK_PRIORITY_COMMUNICATE, NULL, 1);
     xTaskCreatePinnedToCore(monitor, "Monitor", TASK_STACK_SIZE, NULL,
         TASK_PRIORITY_MONITOR, NULL, 1);
     xTaskCreatePinnedToCore(act, "Act", TASK_STACK_SIZE, NULL,
