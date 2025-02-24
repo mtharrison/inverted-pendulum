@@ -77,8 +77,9 @@ void communicate(void* parameters) {
             else if (command == "move") {
                 float speed = request["params"]["speed"].as<float>();
 
-                if (motorState.enabled) {
-                    motorState.speed = speed * MAX_SPEED;
+                if (motorState.enabled && !motorState.resetting) {
+                    motorState.speed = (VELOCITY_FILTER_ALPHA * speed * MAX_SPEED) +
+                    (1 - VELOCITY_FILTER_ALPHA) * motorState.speed;
                 }
                 response["speed"] = motorState.speed;
             }
@@ -170,24 +171,24 @@ void act(void* parameters) {
         }
 
         if (xEventGroupGetBits(resetEventGroup) & RESET_BIT) {
-            stepper.setSpeed(SAFE_SPEED);
+            motorState.enabled = false;
+            stepper.setSpeed(SAFE_SPEED/2);
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
-            stepper.moveTo(100000);
             while (!limitStateR) {
-                stepper.run();
+                stepper.runSpeed();
                 limitStateR = motorState.limitR;
-                vTaskDelay(pdMS_TO_TICKS(0.1));
+                vTaskDelay(pdMS_TO_TICKS(0.01));
             }
 
             digitalWrite(MOTOR_ENABLE_PIN, LOW);
             long rightPosition = stepper.currentPosition();
             stepper.setCurrentPosition(rightPosition);
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
-            stepper.moveTo(-100000);
+            stepper.setSpeed(-SAFE_SPEED/2);
             while (!limitStateL) {
-                stepper.run();
+                stepper.runSpeed();
                 limitStateL = motorState.limitL;
-                vTaskDelay(pdMS_TO_TICKS(0.1));
+                vTaskDelay(pdMS_TO_TICKS(0.01));
             }
 
             digitalWrite(MOTOR_ENABLE_PIN, LOW);

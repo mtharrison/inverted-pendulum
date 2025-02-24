@@ -65,6 +65,8 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
             if response is not None and not response["resetting"]:
                 break
             time.sleep(1)
+            
+        time.sleep(2)   
 
         obs = self.convert_observation(self.client.sense())
 

@@ -80,9 +80,9 @@ class SerialCommunicator:
         """Send a sense command and wait for the response."""
         return self._send_command("sense", timeout=timeout)
 
-    def move(self, distance: int, timeout: float = 0.1) -> Dict[str, Any]:
+    def move(self, speed: int, timeout: float = 0.1) -> Dict[str, Any]:
         """Send a move command with the specified distance and wait for the response."""
-        return self._send_command("move", {"distance": distance}, timeout=timeout)
+        return self._send_command("move", {"speed": speed}, timeout=timeout)
 
     def reset(self, timeout: float = 0.1) -> Dict[str, Any]:
         """Send a reset command and wait for the response."""

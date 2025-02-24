@@ -12,9 +12,9 @@
 #define LIMIT_R_PIN         10
 
 #define MICROSTEPS          1600
-#define MAX_SPEED           (3000)
+#define MAX_SPEED           (2000)
 #define MAX_ACCEL          (10000)
-#define SAFE_SPEED         3000
+#define SAFE_SPEED         1000
 
 // Task Configuration
 #define TASK_STACK_SIZE    4096
@@ -30,7 +30,7 @@
 #define ENCODER_TO_RAD     (2 * PI / ENCODER_STEPS_PER_REV)
 
 // Filter Configuration
-#define VELOCITY_FILTER_ALPHA 0.1f
+#define VELOCITY_FILTER_ALPHA 0.2f
 
 // Network Configuration
 extern const char* WIFI_SSID;
