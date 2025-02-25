@@ -3,13 +3,13 @@
 #define CONFIG_H
 
 // Pin Definitions
-#define MOTOR_ENABLE_PIN     18
-#define STEP_PIN            16
-#define DIR_PIN             7
-#define ENCODER_PIN_A       13
-#define ENCODER_PIN_B       14
-#define LIMIT_L_PIN         12
-#define LIMIT_R_PIN         10
+#define MOTOR_ENABLE_PIN     15
+#define STEP_PIN            5
+#define DIR_PIN             4
+#define ENCODER_PIN_A       16
+#define ENCODER_PIN_B       17
+#define LIMIT_L_PIN         18
+#define LIMIT_R_PIN         8
 
 #define MICROSTEPS          1600
 #define MAX_SPEED           (2000)

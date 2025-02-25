@@ -156,6 +156,8 @@ void act(void* parameters) {
     AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
     stepper.setMaxSpeed(MAX_SPEED);
     stepper.setAcceleration(MAX_ACCEL);
+    // stepper.setPinsInverted(false, false, true);
+    // stepper.enableOutputs();
     pinMode(MOTOR_ENABLE_PIN, OUTPUT);
     digitalWrite(MOTOR_ENABLE_PIN, HIGH);
 
@@ -166,7 +168,7 @@ void act(void* parameters) {
         bool limitStateR = motorState.limitR;
 
         if (limitStateL || limitStateR) {
-            digitalWrite(MOTOR_ENABLE_PIN, LOW);
+            digitalWrite(MOTOR_ENABLE_PIN, HIGH);
             motorState.enabled = false;
         }
 
@@ -180,7 +182,7 @@ void act(void* parameters) {
                 vTaskDelay(pdMS_TO_TICKS(0.01));
             }
 
-            digitalWrite(MOTOR_ENABLE_PIN, LOW);
+            digitalWrite(MOTOR_ENABLE_PIN, HIGH);
             long rightPosition = stepper.currentPosition();
             stepper.setCurrentPosition(rightPosition);
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
@@ -191,7 +193,7 @@ void act(void* parameters) {
                 vTaskDelay(pdMS_TO_TICKS(0.01));
             }
 
-            digitalWrite(MOTOR_ENABLE_PIN, LOW);
+            digitalWrite(MOTOR_ENABLE_PIN, HIGH);
             long leftPosition = stepper.currentPosition();
             stepper.setCurrentPosition(leftPosition);
 
