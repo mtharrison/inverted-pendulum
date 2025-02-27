@@ -6,15 +6,15 @@
 #define MOTOR_ENABLE_PIN     15
 #define STEP_PIN            5
 #define DIR_PIN             4
-#define ENCODER_PIN_A       16
-#define ENCODER_PIN_B       17
-#define LIMIT_L_PIN         18
-#define LIMIT_R_PIN         8
+#define ENCODER_PIN_A       18
+#define ENCODER_PIN_B       8
+#define LIMIT_L_PIN         17
+#define LIMIT_R_PIN         16
 
 #define MICROSTEPS          1600
-#define MAX_SPEED           (2000)
-#define MAX_ACCEL          (10000)
-#define SAFE_SPEED         1000
+#define MAX_SPEED           (11200)
+#define MAX_ACCEL          (30000)
+#define SAFE_SPEED         4000
 
 // Task Configuration
 #define TASK_STACK_SIZE    4096

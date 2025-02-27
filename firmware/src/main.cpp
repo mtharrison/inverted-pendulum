@@ -12,6 +12,7 @@
 
 struct PendulumState {
     int current_position = 0;
+    float max_speed = 0;
     float speed = 0;
     float theta = 0;
     float velocity = 0;
@@ -21,6 +22,7 @@ struct PendulumState {
     bool enabled = true;
     bool resetting = false;
     int extent = 0;
+    int target_position;
 };
 
 // Shared data protection
@@ -78,10 +80,10 @@ void communicate(void* parameters) {
                 float speed = request["params"]["speed"].as<float>();
 
                 if (motorState.enabled && !motorState.resetting) {
-                    motorState.speed = (VELOCITY_FILTER_ALPHA * speed * MAX_SPEED) +
-                    (1 - VELOCITY_FILTER_ALPHA) * motorState.speed;
+                    motorState.max_speed = speed * MAX_SPEED;
                 }
                 response["speed"] = motorState.speed;
+                response["target_position"] = motorState.target_position;
             }
             else if (command == "reset") {
                 motorState.resetting = true;
@@ -156,41 +158,43 @@ void act(void* parameters) {
     AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
     stepper.setMaxSpeed(MAX_SPEED);
     stepper.setAcceleration(MAX_ACCEL);
-    // stepper.setPinsInverted(false, false, true);
-    // stepper.enableOutputs();
+    stepper.setPinsInverted(false, false, true);
+    stepper.enableOutputs();
     pinMode(MOTOR_ENABLE_PIN, OUTPUT);
-    digitalWrite(MOTOR_ENABLE_PIN, HIGH);
+    digitalWrite(MOTOR_ENABLE_PIN, LOW);
 
     for (;;) {
         bool enabled = motorState.enabled;
-        float speed = motorState.speed;
+        float max_speed = motorState.max_speed;
         bool limitStateL = motorState.limitL;
         bool limitStateR = motorState.limitR;
 
         if (limitStateL || limitStateR) {
+            stepper.setMaxSpeed(MAX_SPEED);
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
             motorState.enabled = false;
         }
 
         if (xEventGroupGetBits(resetEventGroup) & RESET_BIT) {
             motorState.enabled = false;
-            stepper.setSpeed(SAFE_SPEED/2);
-            digitalWrite(MOTOR_ENABLE_PIN, HIGH);
+            stepper.setMaxSpeed(MAX_SPEED);
+            stepper.setSpeed(SAFE_SPEED);
+            digitalWrite(MOTOR_ENABLE_PIN, LOW);
             while (!limitStateR) {
                 stepper.runSpeed();
                 limitStateR = motorState.limitR;
-                vTaskDelay(pdMS_TO_TICKS(0.01));
+                // vTaskDelay(pdMS_TO_TICKS(0.01));
             }
 
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
             long rightPosition = stepper.currentPosition();
             stepper.setCurrentPosition(rightPosition);
-            digitalWrite(MOTOR_ENABLE_PIN, HIGH);
-            stepper.setSpeed(-SAFE_SPEED/2);
+            digitalWrite(MOTOR_ENABLE_PIN, LOW);
+            stepper.setSpeed(-SAFE_SPEED);
             while (!limitStateL) {
                 stepper.runSpeed();
                 limitStateL = motorState.limitL;
-                vTaskDelay(pdMS_TO_TICKS(0.01));
+                // vTaskDelay(pdMS_TO_TICKS(0.01));
             }
 
             digitalWrite(MOTOR_ENABLE_PIN, HIGH);
@@ -199,7 +203,7 @@ void act(void* parameters) {
 
 
             long center = (rightPosition + leftPosition) / 2;
-            digitalWrite(MOTOR_ENABLE_PIN, HIGH);
+            digitalWrite(MOTOR_ENABLE_PIN, LOW);
             stepper.moveTo(center);
             stepper.runToPosition();
             stepper.setCurrentPosition(0);
@@ -209,18 +213,29 @@ void act(void* parameters) {
             motorState.enabled = true;
             motorState.resetting = false;
             motorState.extent = abs(center - leftPosition);
+            motorState.max_speed = 0;
             xEventGroupClearBits(resetEventGroup, RESET_BIT);
             stepper.setSpeed(0);
+            stepper.stop();
             continue;
         }
 
         if (enabled) {
-            stepper.setSpeed(speed);
+            stepper.setMaxSpeed(max_speed);
+            if (max_speed > 0) {
+                stepper.moveTo(9999);
+            }
+            else {
+                stepper.moveTo(-9999);
+            }
             stepper.run();
             motorState.current_position = (int)stepper.currentPosition();
         }
 
-        vTaskDelay(pdMS_TO_TICKS(0.1));
+        motorState.speed = stepper.speed();
+        motorState.target_position = stepper.targetPosition();
+
+        ets_delay_us(5);
     }
 }
 

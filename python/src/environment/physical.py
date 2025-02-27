@@ -45,9 +45,9 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         extent = response["extent"] if response["extent"] > 0 else 1000
         self.x_threshold = extent
         theta = response["theta"]
-        theta_dot = response["angular_velocity"]
+        theta_dot = response["angular_velocity"] / 10
         x = response["current_position"] / self.x_threshold
-        x_dot = response["velocity"] / self.x_threshold
+        x_dot = response["velocity"] / (self.x_threshold * 10)
 
         return np.array([x, x_dot, np.cos(theta), np.sin(theta), theta_dot])
 
@@ -62,6 +62,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         # wait until resetting=false
         while True:
             response = self.client.sense()
+            print(response)
             if response is not None and not response["resetting"]:
                 break
             time.sleep(1)
@@ -75,8 +76,9 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)[0]
         self.client.move(action.item())
-        time.sleep(0.01)
+        time.sleep(0.001)
         response = self.client.sense()
+        print(response)
         if response is None:
             return self.last_step_return
 
@@ -97,7 +99,14 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
 
         theta = self.state[2]
 
-        reward = 1 + math.cos(theta) / 2
+        reward = 1 + math.cos(theta)
+        
+        if math.cos(theta) > 0.99 and response["angular_velocity"] < 10:
+            reward += 10
+            
+        if math.cos(theta) > 0.99 and response["angular_velocity"] < 1:
+            reward += 100
+            
 
         # Update GUI and episode data
         self.last_step_return = (obs, reward, action, terminated, truncated)
