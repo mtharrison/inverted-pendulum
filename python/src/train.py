@@ -13,18 +13,17 @@ from environment.physical import InvertedPendulumContinuousControlPhysical
 from agent.sac import SACAgent, ReplayBuffer
 from gui import PendulumVisualizerDPG
 
-
 def train(environment_class, data_queue, signal_queue):
     # Hyperparameters
     state_dim = 5
     action_dim = 1
     max_episodes = 10000
-    max_steps = 1000
+    max_steps = 5000
     batch_size = 256
     buffer_size = int(1e6)
     gamma = 0.99
     tau = 0.005
-    alpha = 0.2
+    alpha = 0.25
     lr = 1e-3
 
     # Parse command line arguments
@@ -71,10 +70,9 @@ def train(environment_class, data_queue, signal_queue):
         episode_reward = 0
         episode_losses = []
 
-        before_step = time.time()
         episode_start_time = time.time()
-        for step in range(max_steps):
-            if not signal_queue.empty():
+        last_step = time.perf_counter()
+        if not signal_queue.empty():
                 signal = signal_queue.get()
                 if signal["type"] == "stop":
                     print("Stopping training...")
@@ -83,14 +81,28 @@ def train(environment_class, data_queue, signal_queue):
                         print("Finishing W&B run...")
                         wandb.finish()
                     return
-
+        for step in range(max_steps):
+            
+            before = time.perf_counter()
             action = agent.select_action(state)
-
+            print('Select action took', (time.perf_counter() - before) * 1000, 'ms')
+            
+            before = time.perf_counter()
             next_state, reward, terminated, truncated, _ = env.step(action)
+            print('Step took', (time.perf_counter() - before) * 1000, 'ms')
+            
 
-            # env.render()
+            elapsed = time.perf_counter() - last_step
+            if elapsed > 0.01:
+                print('Missed deadline by', elapsed)
+            else:
+                print('Sleeping for', 0.01 - elapsed)
+                time.sleep(0.01 - elapsed)
+            last_step = time.perf_counter()
 
             current_position, velocity, _, _, angular_velocity = next_state
+            
+            before = time.perf_counter()
             data_queue.put(
                 {
                     "type": "observation",
@@ -110,13 +122,13 @@ def train(environment_class, data_queue, signal_queue):
             )
             done = terminated or truncated
 
-            buffer.add(state, action, reward, next_state, done)
+            buffer.add(state, action, reward, done)
             episode_reward += reward
 
-            before_step = time.time()
-
             if len(buffer.storage) > batch_size:
+                before = time.perf_counter()
                 losses = agent.update_parameters(buffer, batch_size)
+                print(f'Update parameters took {(time.perf_counter() - before) * 1000}ms')
                 episode_losses.append(losses)
 
             state = next_state
@@ -133,9 +145,10 @@ def train(environment_class, data_queue, signal_queue):
                 }
             )
 
+            print(f'Rst step took {(time.perf_counter() - before) * 1000}ms')
             if done:
                 break
-
+            
         # Calculate average losses for the episode
         if episode_losses:
             avg_losses = np.mean(episode_losses, axis=0)
@@ -204,7 +217,6 @@ def train(environment_class, data_queue, signal_queue):
     env.close()
     if args.use_wandb:
         wandb.finish()
-
 
 def main():
     data_queue = Queue()

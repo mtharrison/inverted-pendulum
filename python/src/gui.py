@@ -191,7 +191,7 @@ class PendulumVisualizerDPG:
                                         tag="angular_velocity_y_axis",
                                     )
                                     dpg.set_axis_limits(
-                                        "angular_velocity_y_axis", -20, 20
+                                        "angular_velocity_y_axis", -5, 5
                                     )
                                     self.angular_velocity_series = dpg.add_line_series(
                                         [],
@@ -457,7 +457,7 @@ class PendulumVisualizerDPG:
         extent = self.state.get("extent", 1000)
         current_position = self.state["current_position"]
         if extent != 0:
-            pendulum_offset_from_center = (current_position / extent) * (
+            pendulum_offset_from_center = (current_position) * (
                 (max_x_pos - min_x_pos - 90) / 2
             )
         else:
@@ -575,10 +575,10 @@ class PendulumVisualizerDPG:
         number_of_points = 1000
 
         dpg.set_axis_limits(
-            "current_position_y_axis", -self.state["extent"], self.state["extent"]
+            "current_position_y_axis", -1, 1
         )
         dpg.set_axis_limits(
-            "velocity_y_axis", -self.state["extent"], self.state["extent"]
+            "velocity_y_axis", -1, 1
         )
 
         # Update angle chart data

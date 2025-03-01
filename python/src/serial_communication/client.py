@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any
 
 
 class SerialCommunicator:
-    def __init__(self, port, baudrate=9600, dummy=False):
+    def __init__(self, port, baudrate=115200, dummy=False):
         """
         Initialize the communicator.
 
@@ -74,17 +74,17 @@ class SerialCommunicator:
                     self.handle_async_message(response)
 
             # Sleep to prevent busy waiting
-            time.sleep(0.0001)
+            time.sleep(0.000001)
 
-    def sense(self, timeout: float = 5) -> Dict[str, Any]:
+    def sense(self, timeout: float = 1) -> Dict[str, Any]:
         """Send a sense command and wait for the response."""
         return self._send_command("sense", timeout=timeout)
 
-    def move(self, speed: int, timeout: float = 0.1) -> Dict[str, Any]:
+    def move(self, speed: int, timeout: float = 1) -> Dict[str, Any]:
         """Send a move command with the specified distance and wait for the response."""
         return self._send_command("move", {"speed": speed}, timeout=timeout)
 
-    def reset(self, timeout: float = 0.1) -> Dict[str, Any]:
+    def reset(self, timeout: float = 1) -> Dict[str, Any]:
         """Send a reset command and wait for the response."""
         return self._send_command("reset", timeout=timeout)
 

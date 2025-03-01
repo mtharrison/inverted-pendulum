@@ -23,7 +23,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         self.client = SerialCommunicator(port="/dev/cu.usbmodem2201")
 
         self.t = 0  # timestep
-        self.t_limit = 1000
+        self.t_limit = 5000
 
         # Observation and action spaces
         high = np.array(
@@ -62,8 +62,10 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         # wait until resetting=false
         while True:
             response = self.client.sense()
-            print(response)
-            if response is not None and not response["resetting"]:
+            print('ang', response["angular_velocity"])
+            print('thet', math.cos(response["theta"]))
+            theta = response["theta"]
+            if response is not None and not response["resetting"] and response["angular_velocity"] < 1 and math.cos(theta) < -0.9:
                 break
             time.sleep(1)
             
@@ -75,10 +77,11 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)[0]
-        self.client.move(action.item())
-        time.sleep(0.001)
-        response = self.client.sense()
-        print(response)
+        
+        before = time.perf_counter()
+        response = self.client.move(action.item())
+        print('Move took', (time.perf_counter() - before) * 1000, 'ms')
+
         if response is None:
             return self.last_step_return
 
@@ -99,14 +102,13 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
 
         theta = self.state[2]
 
-        reward = 1 + math.cos(theta)
+        reward = (1 + math.cos(theta)) - (0.035 * abs(response["angular_velocity"]))
         
-        if math.cos(theta) > 0.99 and response["angular_velocity"] < 10:
-            reward += 10
+        # if math.cos(theta) > 0.99 and response["angular_velocity"] < 10:
+        #     reward += 10
             
-        if math.cos(theta) > 0.99 and response["angular_velocity"] < 1:
-            reward += 100
-            
+        # if math.cos(theta) > 0.99 and response["angular_velocity"] < 1:
+        #     reward += 100
 
         # Update GUI and episode data
         self.last_step_return = (obs, reward, action, terminated, truncated)

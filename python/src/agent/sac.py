@@ -54,12 +54,22 @@ class ReplayBuffer:
         self.max_size = max_size
         self.ptr = 0
 
-    def add(self, state, action, reward, next_state, done):
+    def add(self, state, action, reward, done):
         if len(self.storage) == self.max_size:
-            self.storage[int(self.ptr)] = (state, action, reward, next_state, done)
+            self.storage[int(self.ptr)] = (state, action, reward, state, done)
+            if self.ptr > 0:
+                aslist = list(self.storage[int(self.ptr) - 1])
+                aslist[3] = state
+                self.storage[int(self.ptr) - 1] = tuple(aslist)
+                
             self.ptr = (self.ptr + 1) % self.max_size
+            
         else:
-            self.storage.append((state, action, reward, next_state, done))
+            self.storage.append((state, action, reward, state, done))
+            if len(self.storage) > 2:
+                aslist = list(self.storage[-2])
+                aslist[3] = state
+                self.storage[-2] = tuple(aslist)
 
     def sample(self, batch_size):
         indices = np.random.randint(0, len(self.storage), batch_size)

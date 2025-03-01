@@ -10,6 +10,9 @@
 #define RESET_BIT	    BIT0
 #define RESET_CLEAR_BIT	BIT1
 
+#include "USB.h"
+
+
 struct PendulumState {
     int current_position = 0;
     float max_speed = 0;
@@ -25,9 +28,6 @@ struct PendulumState {
     int target_position;
 };
 
-// Shared data protection
-SemaphoreHandle_t dataMutex = xSemaphoreCreateMutex();
-
 // Global state of the system
 PendulumState motorState;
 
@@ -37,8 +37,8 @@ void DEBUG(const char* message, ...) {
     char buffer[SERIAL_BUFFER_SIZE];
     vsnprintf(buffer, SERIAL_BUFFER_SIZE, message, args);
     va_end(args);
-    Serial.print("DEBUG: ");
-    Serial.println(buffer);
+    USBSerial.print("DEBUG: ");
+    USBSerial.println(buffer);
 }
 
 EventGroupHandle_t resetEventGroup = xEventGroupCreate();
@@ -47,9 +47,21 @@ void communicate(void* parameters) {
     JsonDocument request;
     char buffer[SERIAL_BUFFER_SIZE];
 
+    ESP32Encoder encoder;
+    encoder.attachFullQuad(ENCODER_PIN_A, ENCODER_PIN_B);
+    LimitSwitch limitL(LIMIT_L_PIN);
+    LimitSwitch limitR(LIMIT_R_PIN);
+
+    float filtered_angular_velocity = 0;
+    float filtered_velocity = 0;
+    int32_t lastPosition = 0;
+    int32_t lastTheta = 0;
+
+    int64_t lastTime = esp_timer_get_time();
+
     for (;;) {
-        if (Serial.available()) {
-            size_t len = Serial.readBytesUntil('\n', buffer, SERIAL_BUFFER_SIZE - 1);
+        if (USBSerial.available()) {
+            size_t len = USBSerial.readBytesUntil('\n', buffer, SERIAL_BUFFER_SIZE - 1);
             buffer[len] = '\0';
 
             DeserializationError error = deserializeJson(request, buffer);
@@ -84,6 +96,16 @@ void communicate(void* parameters) {
                 }
                 response["speed"] = motorState.speed;
                 response["target_position"] = motorState.target_position;
+                response["current_position"] = motorState.current_position;
+                response["velocity"] = motorState.velocity;
+                response["theta"] = motorState.theta;
+                response["angular_velocity"] = motorState.angular_velocity;
+                response["limitL"] = motorState.limitL;
+                response["limitR"] = motorState.limitR;
+                response["speed"] = motorState.speed;
+                response["enabled"] = motorState.enabled;
+                response["resetting"] = motorState.resetting;
+                response["extent"] = motorState.extent;
             }
             else if (command == "reset") {
                 motorState.resetting = true;
@@ -94,63 +116,45 @@ void communicate(void* parameters) {
                 response["message"] = "Invalid request type";
             }
 
-            serializeJson(response, Serial);
-            Serial.println();
+            serializeJson(response, USBSerial);
+            USBSerial.println();
         }
+    //     else {
+    //     bool limitStateL = limitL.triggered();
+    //     bool limitStateR = limitR.triggered();
 
-        vTaskDelay(pdMS_TO_TICKS(1));
-    }
-}
+    //     motorState.limitL = limitStateL;
+    //     motorState.limitR = limitStateR;
 
-void monitor(void* parameters) {
-    ESP32Encoder encoder;
-    encoder.attachFullQuad(ENCODER_PIN_A, ENCODER_PIN_B);
-    LimitSwitch limitL(LIMIT_L_PIN);
-    LimitSwitch limitR(LIMIT_R_PIN);
+    //     // Update position and velocities
+    //     int64_t now = esp_timer_get_time();
+    //     float dt = (now - lastTime) / 1e6;
+    //     lastTime = now;
 
-    float filtered_angular_velocity = 0;
-    float filtered_velocity = 0;
-    int32_t lastPosition = 0;
-    int32_t lastTheta = 0;
+    //     int32_t encoderCount = encoder.getCount();
+    //     float newTheta = (encoderCount * ENCODER_TO_RAD) + PI;
 
-    int64_t lastTime = esp_timer_get_time();
-
-    for (;;) {
-        bool limitStateL = limitL.triggered();
-        bool limitStateR = limitR.triggered();
-
-        motorState.limitL = limitStateL;
-        motorState.limitR = limitStateR;
-
-        // Update position and velocities
-        int64_t now = esp_timer_get_time();
-        float dt = (now - lastTime) / 1e6;
-        lastTime = now;
-
-        int32_t encoderCount = encoder.getCount();
-        float newTheta = (encoderCount * ENCODER_TO_RAD) + PI;
-
-        long currentPosition = motorState.current_position;
+    //     long currentPosition = motorState.current_position;
 
 
-        if (dt > 0) {
-            float angular_velocity = (newTheta - motorState.theta) / dt;
-            filtered_angular_velocity = VELOCITY_FILTER_ALPHA * angular_velocity +
-                (1 - VELOCITY_FILTER_ALPHA) * filtered_angular_velocity;
+    //     if (dt > 0) {
+    //         float angular_velocity = (newTheta - motorState.theta) / dt;
+    //         filtered_angular_velocity = VELOCITY_FILTER_ALPHA * angular_velocity +
+    //             (1 - VELOCITY_FILTER_ALPHA) * filtered_angular_velocity;
 
-            float velocity = (currentPosition - lastPosition) / dt;
-            filtered_velocity = VELOCITY_FILTER_ALPHA * velocity +
-                (1 - VELOCITY_FILTER_ALPHA) * filtered_velocity;
-        }
+    //         float velocity = (currentPosition - lastPosition) / dt;
+    //         filtered_velocity = VELOCITY_FILTER_ALPHA * velocity +
+    //             (1 - VELOCITY_FILTER_ALPHA) * filtered_velocity;
+    //     }
 
-        lastTheta = newTheta;
-        lastPosition = currentPosition;
+    //     lastTheta = newTheta;
+    //     lastPosition = currentPosition;
 
-        motorState.theta = newTheta;
-        motorState.angular_velocity = filtered_angular_velocity;
-        motorState.velocity = filtered_velocity;
-
-        vTaskDelay(pdMS_TO_TICKS(1));
+    //     motorState.theta = newTheta;
+    //     motorState.angular_velocity = filtered_angular_velocity;
+    //     motorState.velocity = filtered_velocity;
+    // }
+        vTaskDelay(1);
     }
 }
 
@@ -240,16 +244,18 @@ void act(void* parameters) {
 }
 
 void setup() {
-    Serial.begin(115200);
-
-    xTaskCreatePinnedToCore(communicate, "Communicate", TASK_STACK_SIZE, NULL,
-        TASK_PRIORITY_COMMUNICATE, NULL, 1);
-    xTaskCreatePinnedToCore(monitor, "Monitor", TASK_STACK_SIZE, NULL,
-        TASK_PRIORITY_MONITOR, NULL, 1);
-    xTaskCreatePinnedToCore(act, "Act", TASK_STACK_SIZE, NULL,
-        TASK_PRIORITY_ACT, NULL, 0);
+    // USB.begin();
+    USBSerial.begin(115200);
 
     disableCore0WDT();
+    disableCore1WDT();
+
+    xTaskCreatePinnedToCore(communicate, "Communicate", TASK_STACK_SIZE * 2, NULL,
+        TASK_PRIORITY_COMMUNICATE, NULL, 1);
+    xTaskCreatePinnedToCore(act, "Act", TASK_STACK_SIZE * 2, NULL,
+        TASK_PRIORITY_ACT, NULL, 0);
+
+    
 }
 
 void loop() {
