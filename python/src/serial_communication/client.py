@@ -21,6 +21,23 @@ class SerialCommunicator:
                 port, baudrate, timeout=0, rtscts=True, dsrdtr=True
             )
         self.next_request_id = 1
+        
+    def parse_packet(self, packet: str) -> Dict[str, Any]:
+        """Parse a packet received from the serial port as "id=%d|current_position=%d|velocity=%f|theta=%f|angular_velocity=%f|limitL=%d|limitR=%d|speed=%f|enabled=%d|resetting=%d|extent=%d\n"""
+        response = {}
+        for part in packet.split("|"):
+            key, value = part.split("=")
+            if key == "resetting" or key == "enabled" or key == "limitL" or key == "limitR":
+                value = bool(int(value))
+            elif key == "current_position" or key == "id" or key == "extent":
+                value = int(value)
+            else:
+                try:
+                    value = float(value)
+                except ValueError:
+                    pass
+            response[key] = value
+        return response
 
     def handle_async_message(self, message: dict) -> None:
         """Handle unsolicited messages."""
@@ -32,12 +49,16 @@ class SerialCommunicator:
         request_id = self.next_request_id
         self.next_request_id += 1
 
-        message = {"id": request_id, "command": command}
-
-        if params is not None:
-            message["params"] = params
-        message_str = json.dumps(message) + "\n"
-        self.ser.write(message_str.encode("utf-8"))
+        id = request_id
+        
+        if command == "move":
+            packet = f'{id}|{command}|{params['speed']}\n'.encode("utf-8")
+            # print(f'Sending packet: {packet}')
+            self.ser.write(packet)
+        else:
+            packet = f'{id}|{command}\n'.encode("utf-8")
+            # print(f'Sending packet: {packet}')
+            self.ser.write(packet)
 
         buffer = b""
         start_time = time.time()
@@ -60,14 +81,14 @@ class SerialCommunicator:
                     continue
 
                 try:
-                    response = json.loads(line.decode("utf-8"))
-                except json.JSONDecodeError:
+                    response = self.parse_packet(line.decode("utf-8"))
+                except Exception as e:
                     print(
                         Fore.WHITE + Style.DIM + "[SERIAL]:",
                         line.decode("utf-8", errors="replace") + Style.RESET_ALL,
                     )
                     continue
-
+                
                 if response.get("id") == request_id:
                     return response
                 else:

@@ -23,9 +23,9 @@ def train(environment_class, data_queue, signal_queue):
     buffer_size = int(1e6)
     gamma = 0.99
     tau = 0.005
-    alpha = 0.25
+    alpha = 0.2
     lr = 1e-3
-
+    
     # Parse command line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", type=str, help="Path to checkpoint to resume from")
@@ -81,28 +81,18 @@ def train(environment_class, data_queue, signal_queue):
                         print("Finishing W&B run...")
                         wandb.finish()
                     return
+                
+        before_loop = time.perf_counter()
         for step in range(max_steps):
             
-            before = time.perf_counter()
+            # print(f'Step took {(time.perf_counter() - before_loop) * 1000}ms')
+            before_loop = time.perf_counter()
+            
             action = agent.select_action(state)
-            print('Select action took', (time.perf_counter() - before) * 1000, 'ms')
-            
-            before = time.perf_counter()
             next_state, reward, terminated, truncated, _ = env.step(action)
-            print('Step took', (time.perf_counter() - before) * 1000, 'ms')
-            
-
-            elapsed = time.perf_counter() - last_step
-            if elapsed > 0.01:
-                print('Missed deadline by', elapsed)
-            else:
-                print('Sleeping for', 0.01 - elapsed)
-                time.sleep(0.01 - elapsed)
-            last_step = time.perf_counter()
 
             current_position, velocity, _, _, angular_velocity = next_state
             
-            before = time.perf_counter()
             data_queue.put(
                 {
                     "type": "observation",
@@ -125,12 +115,6 @@ def train(environment_class, data_queue, signal_queue):
             buffer.add(state, action, reward, done)
             episode_reward += reward
 
-            if len(buffer.storage) > batch_size:
-                before = time.perf_counter()
-                losses = agent.update_parameters(buffer, batch_size)
-                print(f'Update parameters took {(time.perf_counter() - before) * 1000}ms')
-                episode_losses.append(losses)
-
             state = next_state
 
             data_queue.put(
@@ -145,9 +129,23 @@ def train(environment_class, data_queue, signal_queue):
                 }
             )
 
-            print(f'Rst step took {(time.perf_counter() - before) * 1000}ms')
+            if time.perf_counter() - before_loop > 0.004:
+                print(f'Missed loop time by {(time.perf_counter() - before_loop) * 1000}ms')
+            else:
+                target = 0.004 + before_loop
+                # Busy wait until the next loop iteration
+                while time.perf_counter() < target:
+                    pass
+                
+            # print('=====================')
+
             if done:
                 break
+            
+        if len(buffer.storage) > batch_size:
+            for i in range(20):
+                losses = agent.update_parameters(buffer, batch_size)
+                episode_losses.append(losses)
             
         # Calculate average losses for the episode
         if episode_losses:

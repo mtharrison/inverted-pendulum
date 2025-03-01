@@ -11,7 +11,23 @@
 #define RESET_CLEAR_BIT	BIT1
 
 #include "USB.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
+typedef enum {
+    CMD_RESET,
+    CMD_MOVE,
+    CMD_SENSE,
+    CMD_UNKNOWN
+} CommandType;
+
+typedef struct {
+    int id;
+    CommandType command;
+    float argument;
+    int hasArgument;  // 1 if an argument was parsed, 0 otherwise
+} ParsedMessage;
 
 struct PendulumState {
     int current_position = 0;
@@ -31,6 +47,51 @@ struct PendulumState {
 // Global state of the system
 PendulumState motorState;
 
+ParsedMessage parseMessage(const char *message) {
+    ParsedMessage parsed;
+    parsed.id = 0;
+    parsed.command = CMD_UNKNOWN;
+    parsed.argument = 0.0f;
+    parsed.hasArgument = 0;
+
+    // We will tokenize the message, so make a copy to avoid altering the original:
+    char buffer[128];
+    strncpy(buffer, message, sizeof(buffer) - 1);
+    buffer[sizeof(buffer) - 1] = '\0';
+
+    // Tokenize on '|'
+    char *token = strtok(buffer, "|");
+    if (!token) {
+        return parsed; // No tokens, not a valid message
+    }
+    // 1) Parse the ID:
+    parsed.id = atoi(token);
+
+    // 2) Parse the command:
+    token = strtok(NULL, "|");
+    if (!token) {
+        return parsed; // No command found
+    }
+    if (strcmp(token, "reset") == 0) {
+        parsed.command = CMD_RESET;
+    } else if (strcmp(token, "move") == 0) {
+        parsed.command = CMD_MOVE;
+    } else if (strcmp(token, "sense") == 0) {
+        parsed.command = CMD_SENSE;
+    } else {
+        parsed.command = CMD_UNKNOWN;
+    }
+
+    // 3) Optionally parse the argument (if present):
+    token = strtok(NULL, "|");
+    if (token) {
+        parsed.argument = (float)atof(token);
+        parsed.hasArgument = 1;
+    }
+
+    return parsed;
+}
+
 void DEBUG(const char* message, ...) {
     va_list args;
     va_start(args, message);
@@ -43,8 +104,18 @@ void DEBUG(const char* message, ...) {
 
 EventGroupHandle_t resetEventGroup = xEventGroupCreate();
 
+void sendState(int id) {
+    char buffer[200];
+    int len = snprintf(buffer, sizeof(buffer),
+      "id=%d|current_position=%d|velocity=%f|theta=%f|angular_velocity=%f|limitL=%d|limitR=%d|speed=%f|enabled=%d|resetting=%d|extent=%d\n",
+        id, motorState.current_position, motorState.velocity, motorState.theta, motorState.angular_velocity,
+        motorState.limitL, motorState.limitR, motorState.speed, motorState.enabled, motorState.resetting, motorState.extent);
+
+    USBSerial.write(buffer, len);
+    USBSerial.flush();
+}
+
 void communicate(void* parameters) {
-    JsonDocument request;
     char buffer[SERIAL_BUFFER_SIZE];
 
     ESP32Encoder encoder;
@@ -64,97 +135,62 @@ void communicate(void* parameters) {
             size_t len = USBSerial.readBytesUntil('\n', buffer, SERIAL_BUFFER_SIZE - 1);
             buffer[len] = '\0';
 
-            DeserializationError error = deserializeJson(request, buffer);
-            if (error) {
-                DEBUG("Failed to parse JSON: %s", error.c_str());
-                continue;
+            ParsedMessage pm = parseMessage(buffer);
+
+            if (pm.command == CMD_SENSE) {
+                sendState(pm.id);
             }
-
-            int id = request["id"];
-            String command = String((const char*)request["command"]);
-            JsonDocument response;
-            response["id"] = id;
-            response["status"] = "OK";
-
-            if (command == "sense") {
-                response["current_position"] = motorState.current_position;
-                response["velocity"] = motorState.velocity;
-                response["theta"] = motorState.theta;
-                response["angular_velocity"] = motorState.angular_velocity;
-                response["limitL"] = motorState.limitL;
-                response["limitR"] = motorState.limitR;
-                response["speed"] = motorState.speed;
-                response["enabled"] = motorState.enabled;
-                response["resetting"] = motorState.resetting;
-                response["extent"] = motorState.extent;
-            }
-            else if (command == "move") {
-                float speed = request["params"]["speed"].as<float>();
-
+            else if (pm.command == CMD_MOVE) {
+                float speed = pm.argument;
                 if (motorState.enabled && !motorState.resetting) {
                     motorState.max_speed = speed * MAX_SPEED;
                 }
-                response["speed"] = motorState.speed;
-                response["target_position"] = motorState.target_position;
-                response["current_position"] = motorState.current_position;
-                response["velocity"] = motorState.velocity;
-                response["theta"] = motorState.theta;
-                response["angular_velocity"] = motorState.angular_velocity;
-                response["limitL"] = motorState.limitL;
-                response["limitR"] = motorState.limitR;
-                response["speed"] = motorState.speed;
-                response["enabled"] = motorState.enabled;
-                response["resetting"] = motorState.resetting;
-                response["extent"] = motorState.extent;
+                sendState(pm.id);
             }
-            else if (command == "reset") {
+            else if (pm.command == CMD_RESET) {
                 motorState.resetting = true;
                 xEventGroupSetBits(resetEventGroup, RESET_BIT);
+                sendState(pm.id);
             }
-            else {
-                response["status"] = "ERROR";
-                response["message"] = "Invalid request type";
-            }
-
-            serializeJson(response, USBSerial);
-            USBSerial.println();
+            
         }
-    //     else {
-    //     bool limitStateL = limitL.triggered();
-    //     bool limitStateR = limitR.triggered();
+        else {
+            bool limitStateL = limitL.triggered();
+            bool limitStateR = limitR.triggered();
 
-    //     motorState.limitL = limitStateL;
-    //     motorState.limitR = limitStateR;
+            motorState.limitL = limitStateL;
+            motorState.limitR = limitStateR;
 
-    //     // Update position and velocities
-    //     int64_t now = esp_timer_get_time();
-    //     float dt = (now - lastTime) / 1e6;
-    //     lastTime = now;
+            // Update position and velocities
+            int64_t now = esp_timer_get_time();
+            float dt = (now - lastTime) / 1e6;
+            lastTime = now;
 
-    //     int32_t encoderCount = encoder.getCount();
-    //     float newTheta = (encoderCount * ENCODER_TO_RAD) + PI;
+            int32_t encoderCount = encoder.getCount();
+            float newTheta = (encoderCount * ENCODER_TO_RAD) + PI;
 
-    //     long currentPosition = motorState.current_position;
+            long currentPosition = motorState.current_position;
 
 
-    //     if (dt > 0) {
-    //         float angular_velocity = (newTheta - motorState.theta) / dt;
-    //         filtered_angular_velocity = VELOCITY_FILTER_ALPHA * angular_velocity +
-    //             (1 - VELOCITY_FILTER_ALPHA) * filtered_angular_velocity;
+            if (dt > 0) {
+                float angular_velocity = (newTheta - motorState.theta) / dt;
+                filtered_angular_velocity = VELOCITY_FILTER_ALPHA * angular_velocity +
+                    (1 - VELOCITY_FILTER_ALPHA) * filtered_angular_velocity;
 
-    //         float velocity = (currentPosition - lastPosition) / dt;
-    //         filtered_velocity = VELOCITY_FILTER_ALPHA * velocity +
-    //             (1 - VELOCITY_FILTER_ALPHA) * filtered_velocity;
-    //     }
+                float velocity = (currentPosition - lastPosition) / dt;
+                filtered_velocity = VELOCITY_FILTER_ALPHA * velocity +
+                    (1 - VELOCITY_FILTER_ALPHA) * filtered_velocity;
+            }
 
-    //     lastTheta = newTheta;
-    //     lastPosition = currentPosition;
+            lastTheta = newTheta;
+            lastPosition = currentPosition;
 
-    //     motorState.theta = newTheta;
-    //     motorState.angular_velocity = filtered_angular_velocity;
-    //     motorState.velocity = filtered_velocity;
-    // }
-        vTaskDelay(1);
+            motorState.theta = newTheta;
+            motorState.angular_velocity = filtered_angular_velocity;
+            motorState.velocity = filtered_velocity;
+        }
+        // yield for micros
+
     }
 }
 
