@@ -275,7 +275,7 @@ void act(void* parameters) {
         motorState.speed = stepper.speed();
         motorState.target_position = stepper.targetPosition();
 
-        ets_delay_us(5);
+        ets_delay_us(1);
     }
 }
 

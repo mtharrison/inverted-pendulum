@@ -13,6 +13,11 @@ from environment.physical import InvertedPendulumContinuousControlPhysical
 from agent.sac import SACAgent, ReplayBuffer
 from gui import PendulumVisualizerDPG
 
+from stable_baselines3.sac.policies import MlpPolicy
+from stable_baselines3 import SAC
+
+
+
 def train(environment_class, data_queue, signal_queue):
     # Hyperparameters
     state_dim = 5
@@ -50,6 +55,13 @@ def train(environment_class, data_queue, signal_queue):
 
     # Initialize environment and agent
     env = environment_class(render_mode="human")
+    # check_env(env, warn=True)
+    # return
+    model = SAC(MlpPolicy, env, verbose=1)
+    model.learn(total_timesteps=5e6, log_interval=100000000)
+    model.save("sac_pendulum")
+    return
+
     agent = SACAgent(state_dim, action_dim, device, gamma, tau, alpha, lr)
 
     # Resume training if specified

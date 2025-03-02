@@ -49,12 +49,12 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         x = response["current_position"] / self.x_threshold
         x_dot = response["velocity"] / (self.x_threshold * 10)
 
-        return np.array([x, x_dot, np.cos(theta), np.sin(theta), theta_dot])
+        return np.array([x, x_dot, np.cos(theta), np.sin(theta), theta_dot], dtype=np.float32)
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict] = None
     ) -> Tuple[np.ndarray, dict]:
-        self.state = np.array([0, 0, np.pi, 0])
+        self.state = np.array([0, 0, np.pi, 0], dtype=np.float32)
         self.t = 0
 
         self.client.reset()
@@ -109,7 +109,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         #     reward += 100
 
         # Update GUI and episode data
-        self.last_step_return = (obs, reward, action, terminated, truncated)
+        self.last_step_return = (obs, reward, terminated, truncated, {})
 
         return obs, reward, terminated, truncated, {}
 
