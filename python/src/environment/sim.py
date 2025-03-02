@@ -26,11 +26,11 @@ class InvertedPendulumContinuousControlSim(Env):
         self.b = 1.0  # friction coefficient
 
         self.t = 0  # timestep
-        self.t_limit = 1000
+        self.t_limit = 5000
 
         # Thresholds
         self.theta_threshold_radians = 12 * 2 * math.pi / 360
-        self.x_threshold = 0.5
+        self.x_threshold = 1.0
 
         # Observation and action spaces
         high = np.array(
@@ -98,34 +98,60 @@ class InvertedPendulumContinuousControlSim(Env):
         self.state = (x, x_dot, theta, theta_dot)
 
         # Termination conditions
-        terminated = abs(x) > self.x_threshold
-        truncated = self.t >= self.t_limit
+        terminated = bool(abs(x) > self.x_threshold or abs(theta_dot) > 16.0)
+        truncated = bool(self.t >= self.t_limit)
         self.t += 1
 
         # Compute reward
-        reward = self.inverted_pendulum_reward(np.cos(theta))
+        reward = self.inverted_pendulum_reward(
+            theta=theta,
+            theta_dot=theta_dot,
+            action=action,
+            kappa=1.0,
+            beta=0.0005,
+            gamma=0.0001
+        )
 
-        obs = np.array([x, x_dot, np.cos(theta), np.sin(theta), theta_dot])
+        reward = (0.5 * (1+math.cos(theta))) - x**2
+
+
+        obs = np.array(
+            [x, x_dot, np.cos(theta), np.sin(theta), theta_dot], dtype=np.float32
+        )
 
         return obs, reward, terminated, truncated, {}
 
     def inverted_pendulum_reward(
         self,
-        cos_theta: float,
+        theta: float,
+        theta_dot: float,
+        action: float,
+        kappa=1.0,
+        beta=0.1,
+        gamma=0.001
     ) -> float:
         """
-        Computes the reward for the inverted pendulum swing-up task.
-        Updated to penalize excessive spinning and jerky motions.
+        Alternative: reward is +kappa*cos(theta_norm), minus penalties for velocity and control.
         """
+        # Normalize angle
+        theta_norm = ((theta + np.pi) % (2 * np.pi)) - np.pi
 
-        return 1 + cos_theta / 2
+        reward = (
+            kappa * np.cos(theta_norm)
+            - beta * (theta_dot**2)
+            - gamma * (action**2)
+        )
+        return reward
+
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.state = np.array([0, 0, np.pi, 0])
         self.t = 0
         x, x_dot, theta, theta_dot = self.state
-        obs = np.array([x, x_dot, np.cos(theta), np.sin(theta), theta_dot])
+        obs = np.array(
+            [x, x_dot, np.cos(theta), np.sin(theta), theta_dot], dtype=np.float32
+        )
         return obs, {}
 
     def angle_normalize(self, x):
