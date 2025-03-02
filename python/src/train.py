@@ -72,7 +72,7 @@ def train(environment_class, data_queue, signal_queue):
     )
 
     # Train the agent
-    agent.learn(total_timesteps=100000, callback=StateQueueCallback(data_queue))
+    agent.learn(total_timesteps=1000000, callback=StateQueueCallback(data_queue))
 
 
 def main():

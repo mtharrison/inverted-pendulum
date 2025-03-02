@@ -75,10 +75,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)[0]
-        
-        before = time.perf_counter()
         response = self.client.move(action.item())
-        # print('Move took', (time.perf_counter() - before) * 1000, 'ms')
 
         if response is None:
             return self.last_step_return
@@ -91,22 +88,15 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         limitL = response["limitL"]
         limitR = response["limitR"]
 
-        # Check termination conditions
-        terminated = limitL or limitR
-
         # Check truncation
-        self.t += 1
         truncated = self.t >= self.t_limit
 
-        theta = self.state[2]
+        # Termination conditions
+        terminated = ((limitL or limitR) or abs(obs[4]) > 16.0)
+        truncated = bool(self.t >= self.t_limit)
+        self.t += 1
 
-        reward = (1 + math.cos(theta)) - (0.001 * abs(response["angular_velocity"]))
-        
-        # if math.cos(theta) > 0.99 and response["angular_velocity"] < 10:
-        #     reward += 10
-            
-        # if math.cos(theta) > 0.99 and response["angular_velocity"] < 1:
-        #     reward += 100
+        reward = (0.5 * (1+obs[2])) - obs[0]**2
 
         # Update GUI and episode data
         self.last_step_return = (obs, reward, terminated, truncated, {})
