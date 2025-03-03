@@ -190,7 +190,7 @@ void communicate(void* parameters) {
             motorState.velocity = filtered_velocity;
         }
         // yield for micros
-
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 

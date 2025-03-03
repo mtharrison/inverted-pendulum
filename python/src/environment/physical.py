@@ -105,9 +105,9 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
 
         reward = 0.5 * (1 + obs[2])
         # Update GUI and episode data
-        self.last_step_return = (obs, reward, terminated, truncated, {})
+        self.last_step_return = (obs, float(reward), bool(terminated), bool(truncated), {})
 
-        return obs, reward, terminated, truncated, {}
+        return obs, float(reward), bool(terminated), bool(truncated), {}
 
     def __del__(self) -> None:
         self.client.close()

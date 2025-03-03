@@ -66,9 +66,12 @@ class StateQueueCallback(BaseCallback):
                 },
             }
         )
-
+        
         while (time.perf_counter() - self.t) < 0.005:
             pass
+        
+        print(f"Elapsed time: {(time.perf_counter() - self.t) * 1000}ms")
+        
         self.t = time.perf_counter()
 
         self.episode_reward += self.locals["rewards"][0]
@@ -105,7 +108,10 @@ def train(environment_class, data_queue, signal_queue):
         verbose=1,
         tensorboard_log="./tensorboard_logs",
         train_freq=(1, "episode"),
-        gradient_steps=50 * 5,
+        learning_starts=1000,
+        gradient_steps=1000,
+        ent_coef=0.1,
+        learning_rate=3e-4
     )
 
     agent.learn(total_timesteps=1000000, callback=StateQueueCallback(data_queue))
