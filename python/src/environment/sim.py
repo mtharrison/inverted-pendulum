@@ -17,12 +17,12 @@ class InvertedPendulumContinuousControlSim(Env):
     def __init__(self, render_mode="human"):
         self.g = 9.82  # gravity
         self.m_c = 0.5  # cart mass
-        self.m_p = 0.01  # pendulum mass
+        self.m_p = 0.2  # pendulum mass
         self.total_m = self.m_p + self.m_c
-        self.l = 0.25  # pole's length
+        self.l = 0.40  # pole's length
         self.m_p_l = self.m_p * self.l
-        self.force_mag = 1.0
-        self.dt = 0.01  # seconds between state updates
+        self.force_mag = 10.0
+        self.dt = 0.005  # seconds between state updates
         self.b = 1.0  # friction coefficient
 
         self.t = 0  # timestep
@@ -109,11 +109,10 @@ class InvertedPendulumContinuousControlSim(Env):
             action=action,
             kappa=1.0,
             beta=0.0005,
-            gamma=0.0001
+            gamma=0.0001,
         )
 
-        reward = (0.5 * (1+math.cos(theta))) - x**2
-
+        reward = 0.5 * (1 + math.cos(theta))
 
         obs = np.array(
             [x, x_dot, np.cos(theta), np.sin(theta), theta_dot], dtype=np.float32
@@ -128,7 +127,7 @@ class InvertedPendulumContinuousControlSim(Env):
         action: float,
         kappa=1.0,
         beta=0.1,
-        gamma=0.001
+        gamma=0.001,
     ) -> float:
         """
         Alternative: reward is +kappa*cos(theta_norm), minus penalties for velocity and control.
@@ -137,12 +136,9 @@ class InvertedPendulumContinuousControlSim(Env):
         theta_norm = ((theta + np.pi) % (2 * np.pi)) - np.pi
 
         reward = (
-            kappa * np.cos(theta_norm)
-            - beta * (theta_dot**2)
-            - gamma * (action**2)
+            kappa * np.cos(theta_norm) - beta * (theta_dot**2) - gamma * (action**2)
         )
         return reward
-
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)

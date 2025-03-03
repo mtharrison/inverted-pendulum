@@ -21,13 +21,18 @@ class SerialCommunicator:
                 port, baudrate, timeout=0, rtscts=True, dsrdtr=True
             )
         self.next_request_id = 1
-        
+
     def parse_packet(self, packet: str) -> Dict[str, Any]:
         """Parse a packet received from the serial port as "id=%d|current_position=%d|velocity=%f|theta=%f|angular_velocity=%f|limitL=%d|limitR=%d|speed=%f|enabled=%d|resetting=%d|extent=%d\n"""
         response = {}
         for part in packet.split("|"):
             key, value = part.split("=")
-            if key == "resetting" or key == "enabled" or key == "limitL" or key == "limitR":
+            if (
+                key == "resetting"
+                or key == "enabled"
+                or key == "limitL"
+                or key == "limitR"
+            ):
                 value = bool(int(value))
             elif key == "current_position" or key == "id" or key == "extent":
                 value = int(value)
@@ -50,13 +55,13 @@ class SerialCommunicator:
         self.next_request_id += 1
 
         id = request_id
-        
+
         if command == "move":
-            packet = f'{id}|{command}|{params['speed']}\n'.encode("utf-8")
+            packet = f"{id}|{command}|{params['speed']}\n".encode("utf-8")
             # print(f'Sending packet: {packet}')
             self.ser.write(packet)
         else:
-            packet = f'{id}|{command}\n'.encode("utf-8")
+            packet = f"{id}|{command}\n".encode("utf-8")
             # print(f'Sending packet: {packet}')
             self.ser.write(packet)
 
@@ -88,7 +93,7 @@ class SerialCommunicator:
                         line.decode("utf-8", errors="replace") + Style.RESET_ALL,
                     )
                     continue
-                
+
                 if response.get("id") == request_id:
                     return response
                 else:

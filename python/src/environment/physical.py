@@ -49,7 +49,9 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         x = response["current_position"] / self.x_threshold
         x_dot = response["velocity"] / (self.x_threshold * 10)
 
-        return np.array([x, x_dot, np.cos(theta), np.sin(theta), theta_dot], dtype=np.float32)
+        return np.array(
+            [x, x_dot, np.cos(theta), np.sin(theta), theta_dot], dtype=np.float32
+        )
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict] = None
@@ -63,11 +65,16 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         while True:
             response = self.client.sense()
             print(response)
-            if response is not None and not response["resetting"] and response["angular_velocity"] < 1 and math.cos(response["theta"]) < -0.9:
+            if (
+                response is not None
+                and not response["resetting"]
+                and response["angular_velocity"] < 1
+                and math.cos(response["theta"]) < -0.9
+            ):
                 break
             time.sleep(1)
-            
-        time.sleep(2)   
+
+        time.sleep(2)
 
         obs = self.convert_observation(self.client.sense())
 
@@ -92,12 +99,11 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         truncated = self.t >= self.t_limit
 
         # Termination conditions
-        terminated = ((limitL or limitR) or abs(obs[4]) > 16.0)
+        terminated = (limitL or limitR) or abs(obs[4]) > 16.0
         truncated = bool(self.t >= self.t_limit)
         self.t += 1
 
-        reward = (0.5 * (1+obs[2])) - obs[0]**2
-
+        reward = 0.5 * (1 + obs[2])
         # Update GUI and episode data
         self.last_step_return = (obs, reward, terminated, truncated, {})
 
