@@ -2,8 +2,11 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#define RESET_BIT	    BIT0
+#define RESET_CLEAR_BIT	BIT1
+
 // Pin Definitions
-#define MOTOR_ENABLE_PIN     15
+#define MOTOR_ENABLE_PIN    15
 #define STEP_PIN            5
 #define DIR_PIN             4
 #define ENCODER_PIN_A       18
@@ -12,15 +15,15 @@
 #define LIMIT_R_PIN         16
 
 #define MICROSTEPS          1600
-#define MAX_SPEED           (11200 * 5)
-#define MAX_ACCEL          (30000 * 5)
-#define SAFE_SPEED         4000
+#define MAX_SPEED           (11200 * 4)
+#define MAX_ACCEL           (30000 * 4)
+#define SAFE_SPEED          4000
 
 // Task Configuration
-#define TASK_STACK_SIZE    4096
-#define TASK_PRIORITY_COMMUNICATE 3
-#define TASK_PRIORITY_MONITOR    4
-#define TASK_PRIORITY_ACT        5
+#define TASK_STACK_SIZE             4096
+#define TASK_PRIORITY_COMMUNICATE   3
+#define TASK_PRIORITY_MONITOR       4
+#define TASK_PRIORITY_ACT           5
 
 // Communication Configuration
 #define SERIAL_BUFFER_SIZE  256

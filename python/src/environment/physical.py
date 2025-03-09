@@ -66,7 +66,6 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         # wait until resetting=false
         while True:
             response = self.client.sense()
-            print(response)
             if (
                 response is not None
                 and not response["resetting"]
@@ -86,7 +85,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         action = np.clip(action, -1.0, 1.0)[0]
         self.client.move(action.item())
 
-        while (time.perf_counter() - self.t) < 0.004:
+        while (time.perf_counter() - self.t) < 0.005:
             pass
 
         response = self.client.sense()
