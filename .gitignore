@@ -3,6 +3,7 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+python/src/tensorboard_logs
 __pycache__
 .venv
 .pytest_cache

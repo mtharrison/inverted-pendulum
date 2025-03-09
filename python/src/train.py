@@ -22,7 +22,6 @@ class StateQueueCallback(BaseCallback):
     def __init__(self, state_queue, verbose=0):
         super(StateQueueCallback, self).__init__(verbose)
         self.state_queue = state_queue
-        self.t = time.perf_counter()
 
         self.episode = 0
         self.step = 0
@@ -66,14 +65,7 @@ class StateQueueCallback(BaseCallback):
                 },
             }
         )
-        
-        while (time.perf_counter() - self.t) < 0.005:
-            pass
-        
-        print(f"Elapsed time: {(time.perf_counter() - self.t) * 1000}ms")
-        
-        self.t = time.perf_counter()
-
+     
         self.episode_reward += self.locals["rewards"][0]
 
         self.step += 1

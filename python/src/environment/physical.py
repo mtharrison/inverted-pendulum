@@ -23,6 +23,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         self.client = SerialCommunicator(port="/dev/cu.usbmodem2201")
 
         self.t = 0  # timestep
+        self.last_time = time.perf_counter()
         self.t_limit = 5000
 
         # Observation and action spaces
@@ -45,9 +46,9 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         extent = response["extent"] if response["extent"] > 0 else 1000
         self.x_threshold = extent
         theta = response["theta"]
-        theta_dot = response["angular_velocity"] / 10
+        theta_dot = response["angular_velocity"] / 5.0
         x = response["current_position"] / self.x_threshold
-        x_dot = response["velocity"] / (self.x_threshold * 10)
+        x_dot = response["velocity"] / (self.x_threshold)
 
         return np.array(
             [x, x_dot, np.cos(theta), np.sin(theta), theta_dot], dtype=np.float32
@@ -58,6 +59,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
     ) -> Tuple[np.ndarray, dict]:
         self.state = np.array([0, 0, np.pi, 0], dtype=np.float32)
         self.t = 0
+        self.last_time = time.perf_counter()
 
         self.client.reset()
 
@@ -82,7 +84,14 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)[0]
-        response = self.client.move(action.item())
+        self.client.move(action.item())
+
+        while (time.perf_counter() - self.t) < 0.004:
+            pass
+
+        response = self.client.sense()
+        # print(f"Elapsed time: {(time.perf_counter() - self.last_time) * 1000}ms")
+        self.last_time = time.perf_counter()
 
         if response is None:
             return self.last_step_return
@@ -105,7 +114,13 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
 
         reward = 0.5 * (1 + obs[2])
         # Update GUI and episode data
-        self.last_step_return = (obs, float(reward), bool(terminated), bool(truncated), {})
+        self.last_step_return = (
+            obs,
+            float(reward),
+            bool(terminated),
+            bool(truncated),
+            {},
+        )
 
         return obs, float(reward), bool(terminated), bool(truncated), {}
 
