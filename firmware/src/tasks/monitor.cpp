@@ -31,7 +31,6 @@ void monitor(void* parameters) {
 
         long currentPosition = motorState.current_position;
 
-
         if (dt > 0) {
             float angular_velocity = (newTheta - motorState.theta) / dt;
             filtered_angular_velocity = VELOCITY_FILTER_ALPHA * angular_velocity +

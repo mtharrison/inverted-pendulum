@@ -15,8 +15,8 @@
 #define LIMIT_R_PIN         16
 
 #define MICROSTEPS          1600
-#define MAX_SPEED           (11200 * 4)
-#define MAX_ACCEL           (30000 * 4)
+#define MAX_SPEED           (20000)
+#define MAX_ACCEL           (50000)
 #define SAFE_SPEED          4000
 
 // Task Configuration
