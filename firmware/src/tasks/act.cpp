@@ -85,15 +85,19 @@ static void update_step_pattern() {
 // Target speed for acceleration control
 static int target_speed = 0;
 static unsigned long last_accel_time = 0;
+static bool reset_mode = false;
 
 // Start or stop the stepping
-static void control_stepper(int speed) {
+static void control_stepper(int speed, bool bypass_accel = false) {
     // Log input speed for debugging
     static int last_logged_speed = 0;
     if (speed != last_logged_speed) {
         USBSerial.printf("control_stepper called with speed = %d\n", speed);
         last_logged_speed = speed;
     }
+
+    // Store if we're in reset mode (used during handle_reset())
+    reset_mode = bypass_accel;
 
     bool direction = speed >= 0;
     speed = abs(speed);
@@ -105,6 +109,7 @@ static void control_stepper(int speed) {
             USBSerial.println("Stopping motor");
         }
         current_speed = 0;
+        target_speed = 0;
         return;
     }
     
@@ -128,18 +133,71 @@ static void control_stepper(int speed) {
         current_speed = 0;
     }
     
-    // Set new speed directly - no acceleration for now to simplify debugging
-    current_speed = direction ? speed : -speed;
-    USBSerial.printf("Setting current_speed to %d\n", current_speed);
+    // Set target speed
+    target_speed = direction ? speed : -speed;
+    
+    // In bypass_accel mode (reset), apply speed immediately
+    if (bypass_accel) {
+        current_speed = target_speed;
+        USBSerial.printf("Setting current_speed directly to %d (bypass_accel mode)\n", current_speed);
+    } else {
+        // In normal mode, we'll use acceleration in the act task loop
+        USBSerial.printf("Set target_speed to %d (with acceleration)\n", target_speed);
+    }
     
     // Update the step pattern
     update_step_pattern();
     
     // Start stepping if not already running
-    if (!is_running && speed > 0) {
+    if (!is_running && abs(current_speed) > 0) {
         USBSerial.println("Starting motor");
         is_running = true;
         ESP_ERROR_CHECK(rmt_write_items(RMT_CHANNEL, rmt_step_pattern, 1, false));
+    }
+}
+
+// Apply acceleration to gradually change speed
+static void apply_acceleration() {
+    // Skip if we're in reset mode (bypass_accel was true)
+    if (reset_mode) return;
+    
+    // Only do acceleration if current_speed differs from target_speed
+    if (current_speed != target_speed) {
+        // Get current time
+        unsigned long now = millis();
+        unsigned long elapsed = now - last_accel_time;
+        
+        // Update at most every 5ms
+        if (elapsed >= 5) {
+            last_accel_time = now;
+            
+            // Calculate max step change based on elapsed time and MAX_ACCEL
+            // MAX_ACCEL is in steps/second^2, so we need to convert to steps per elapsed time
+            int accel_step = (int)(MAX_ACCEL * elapsed / 1000);
+            
+            // Ensure we make at least 1 step of progress if accel_step calculates to 0
+            if (accel_step == 0) accel_step = 1;
+            
+            // Accelerate or decelerate toward target_speed
+            if (current_speed < target_speed) {
+                current_speed = min(current_speed + accel_step, target_speed);
+            } else if (current_speed > target_speed) {
+                current_speed = max(current_speed - accel_step, target_speed);
+            }
+            
+            // Debug output - uncomment if needed
+            // USBSerial.printf("Accelerating: current=%d, target=%d, accel_step=%d\n", 
+            //    current_speed, target_speed, accel_step);
+            
+            // Update the step pattern for the new speed
+            update_step_pattern();
+            
+            // Start stepping if needed
+            if (!is_running && abs(current_speed) > 0) {
+                is_running = true;
+                ESP_ERROR_CHECK(rmt_write_items(RMT_CHANNEL, rmt_step_pattern, 1, false));
+            }
+        }
     }
 }
 
@@ -170,15 +228,15 @@ static void handle_reset(PendulumState &state) {
                 reset_state = RESET_TO_RIGHT;
                 USBSerial.println("Starting reset sequence - moving right");
                 
-                // Use the new control_stepper function
-                control_stepper(SAFE_SPEED);
+                // Use bypass_accel=true to skip acceleration during reset
+                control_stepper(SAFE_SPEED, true);
             }
             break;
             
         case RESET_TO_LEFT:
             if (state.limitL) {
                 // Hit left limit
-                control_stepper(0);  // Stop
+                control_stepper(0, true);  // Stop
                 
                 // Add a small delay to ensure we've fully stopped
                 vTaskDelay(pdMS_TO_TICKS(50));
@@ -213,7 +271,7 @@ static void handle_reset(PendulumState &state) {
             // Add safety check - if we're exceeding reasonable position limit
             if (!state.limitL && state.current_position < -50000) {
                 // Emergency stop if we've gone too far
-                control_stepper(0);
+                control_stepper(0, true);
                 USBSerial.println("Emergency stop - exceeded left position limit");
                 reset_state = RESET_IDLE;
                 state.resetting = false;
@@ -223,7 +281,7 @@ static void handle_reset(PendulumState &state) {
         case RESET_TO_RIGHT:
             if (state.limitR) {
                 // Hit right limit
-                control_stepper(0);  // Stop
+                control_stepper(0, true);  // Stop
                 
                 // Add a small delay to ensure we've fully stopped
                 vTaskDelay(pdMS_TO_TICKS(50));
@@ -235,8 +293,8 @@ static void handle_reset(PendulumState &state) {
                 reset_state = RESET_TO_LEFT;
                 USBSerial.println("Moving to left limit");
                 
-                // Use the new control_stepper function
-                control_stepper(-SAFE_SPEED);
+                // Use bypass_accel=true to skip acceleration during reset
+                control_stepper(-SAFE_SPEED, true);
                 
                 // Log the limit detection for debugging
                 USBSerial.println("Right limit detected, moving left");
@@ -245,7 +303,7 @@ static void handle_reset(PendulumState &state) {
             // Add safety check - if we're exceeding reasonable position limit
             if (!state.limitR && state.current_position > 50000) {
                 // Emergency stop if we've gone too far
-                control_stepper(0);
+                control_stepper(0, true);
                 USBSerial.println("Emergency stop - exceeded right position limit");
                 reset_state = RESET_IDLE;
                 state.resetting = false;
@@ -280,7 +338,7 @@ static void handle_reset(PendulumState &state) {
                     USBSerial.println("Reached center position, reset complete");
                     
                     // Make sure we completely stop the motor
-                    control_stepper(0);
+                    control_stepper(0, true);
                     
                     // Allow time for motor to stop
                     vTaskDelay(pdMS_TO_TICKS(50));
@@ -297,13 +355,13 @@ static void handle_reset(PendulumState &state) {
                         // Need to move right
                         if (current_speed <= 0) { // If stopped or moving wrong direction
                             USBSerial.println("Moving right to center");
-                            control_stepper(SAFE_SPEED);
+                            control_stepper(SAFE_SPEED, true);
                         }
                     } else {
                         // Need to move left
                         if (current_speed >= 0) { // If stopped or moving wrong direction
                             USBSerial.println("Moving left to center");
-                            control_stepper(-SAFE_SPEED);
+                            control_stepper(-SAFE_SPEED, true);
                         }
                     }
                 }
@@ -357,36 +415,39 @@ void act(void* parameters) {
             } else {
                 // Normal operation - motorState.speed is already scaled in communicate.cpp
                 // Just constrain it to MAX_SPEED
-                int target_speed = (int)constrain(abs(motorState.speed), 0.0f, (float)MAX_SPEED);
+                int computed_target_speed = (int)constrain(abs(motorState.speed), 0.0f, (float)MAX_SPEED);
                 
                 // Apply direction from motorState.speed
                 if (motorState.speed < 0) {
-                    target_speed = -target_speed;
+                    computed_target_speed = -computed_target_speed;
                 }
                 
                 // // Extended debug output
                 // USBSerial.printf("Speed value: %f, Target: %d, Current: %d, Direction: %d, Running: %d\n", 
-                //     motorState.speed, target_speed, current_speed, current_direction, is_running);
+                //     motorState.speed, computed_target_speed, current_speed, current_direction, is_running);
                 
                 // Check limit switches and prevent motion in that direction
-                if ((motorState.limitL && target_speed < 0) || 
-                    (motorState.limitR && target_speed > 0)) {
-                    target_speed = 0;
+                if ((motorState.limitL && computed_target_speed < 0) || 
+                    (motorState.limitR && computed_target_speed > 0)) {
+                    computed_target_speed = 0;
                 }
                 
                 // Compare with the last speed we set
-                if (target_speed != last_speed) {
-                    // USBSerial.printf("Speed changed from %d to %d\n", last_speed, target_speed);
-                    last_speed = target_speed;
+                if (computed_target_speed != last_speed) {
+                    // USBSerial.printf("Speed changed from %d to %d\n", last_speed, computed_target_speed);
+                    last_speed = computed_target_speed;
                     
-                    // Use the new control_stepper implementation without acceleration
-                    control_stepper(target_speed);
+                    // Set target speed with acceleration enabled (bypass_accel=false)
+                    control_stepper(computed_target_speed, false);
                 }
+                
+                // Apply acceleration (gradually adjust current_speed toward target_speed)
+                apply_acceleration();
             }
         } else {
             // Motor disabled - stop movement
             if (last_speed != 0) {
-                control_stepper(0);
+                control_stepper(0, true);  // Use bypass_accel for immediate stop
                 last_speed = 0;
             }
             
