@@ -216,17 +216,9 @@ static void apply_acceleration() {
 
 // Process reset state machine
 static void handle_reset(PendulumState &state) {
-    // Debug the current state
+    // Track state changes
     static ResetState last_reset_state = RESET_IDLE;
     if (reset_state != last_reset_state) {
-        USBSerial.print("Reset state changed to: ");
-        switch (reset_state) {
-            case RESET_IDLE: USBSerial.println("RESET_IDLE"); break;
-            case RESET_TO_LEFT: USBSerial.println("RESET_TO_LEFT"); break;
-            case RESET_TO_RIGHT: USBSerial.println("RESET_TO_RIGHT"); break;
-            case RESET_TO_CENTER: USBSerial.println("RESET_TO_CENTER"); break;
-            case RESET_COMPLETE: USBSerial.println("RESET_COMPLETE"); break;
-        }
         last_reset_state = reset_state;
     }
     
@@ -239,7 +231,6 @@ static void handle_reset(PendulumState &state) {
                 
                 // Start reset process - actual hardware behavior shows we're moving right first
                 reset_state = RESET_TO_RIGHT;
-                USBSerial.println("Starting reset sequence - moving right");
                 
                 // Use bypass_accel=true to skip acceleration during reset
                 control_stepper(SAFE_SPEED, true);
@@ -260,9 +251,7 @@ static void handle_reset(PendulumState &state) {
                 int center_position = (left_position + right_position) / 2;
                 state.extent = right_position - left_position;
                 
-                // Log positions
-                USBSerial.printf("Left pos: %d, Right pos: %d, Center: %d\n", 
-                    left_position, right_position, center_position);
+                // Calculate positions
                 
                 // Move to center
                 reset_state = RESET_TO_CENTER;
@@ -272,20 +261,14 @@ static void handle_reset(PendulumState &state) {
                 vTaskDelay(pdMS_TO_TICKS(100));
                 
                 // Determine direction to center - should be right from the left limit
-                USBSerial.println("Starting move to center");
-                
-                // Use the new control_stepper function
                 control_stepper(SAFE_SPEED);
                 
-                // Log the limit detection for debugging
-                USBSerial.println("Left limit detected, moving to center");
             }
             
             // Add safety check - if we're exceeding reasonable position limit
             if (!state.limitL && state.current_position < -50000) {
                 // Emergency stop if we've gone too far
                 control_stepper(0, true);
-                USBSerial.println("Emergency stop - exceeded left position limit");
                 reset_state = RESET_IDLE;
                 state.resetting = false;
             }
@@ -304,20 +287,15 @@ static void handle_reset(PendulumState &state) {
                 
                 // Now move to left limit
                 reset_state = RESET_TO_LEFT;
-                USBSerial.println("Moving to left limit");
                 
                 // Use bypass_accel=true to skip acceleration during reset
                 control_stepper(-SAFE_SPEED, true);
-                
-                // Log the limit detection for debugging
-                USBSerial.println("Right limit detected, moving left");
             }
             
             // Add safety check - if we're exceeding reasonable position limit
             if (!state.limitR && state.current_position > 50000) {
                 // Emergency stop if we've gone too far
                 control_stepper(0, true);
-                USBSerial.println("Emergency stop - exceeded right position limit");
                 reset_state = RESET_IDLE;
                 state.resetting = false;
             }
@@ -327,28 +305,18 @@ static void handle_reset(PendulumState &state) {
             {
                 int center_position = (left_position + right_position) / 2;
 
-                USBSerial.print(center_position);
-                USBSerial.print(" | ");
-                USBSerial.print(state.current_position);
-                USBSerial.print(" | ");
-                USBSerial.print(current_direction);
-                USBSerial.print(" | ");
-                USBSerial.print(current_speed);
-                USBSerial.print("\n");
+                // Calculate center position and monitor progress
                 
-                // Log progress to center periodically
+                // Monitor progress to center periodically
                 static int center_debug_counter = 0;
                 if (++center_debug_counter >= 40) { // Every ~200ms
                     center_debug_counter = 0;
-                    USBSerial.printf("Moving to center: Current=%d, Target=%d, Diff=%d\n", 
-                        state.current_position, center_position, 
-                        state.current_position - center_position);
+                    // Check progress (no logs)
                 }
                 
                 // Check if we're close to center (within 10 steps)
                 if (abs(state.current_position - center_position) < 10) {
-                    // At center position
-                    USBSerial.println("Reached center position, reset complete");
+                    // At center position - reset complete
                     
                     // Make sure we completely stop the motor
                     control_stepper(0, true);
@@ -367,13 +335,11 @@ static void handle_reset(PendulumState &state) {
                     if (state.current_position < center_position) {
                         // Need to move right
                         if (current_speed <= 0) { // If stopped or moving wrong direction
-                            USBSerial.println("Moving right to center");
                             control_stepper(SAFE_SPEED, true);
                         }
                     } else {
                         // Need to move left
                         if (current_speed >= 0) { // If stopped or moving wrong direction
-                            USBSerial.println("Moving left to center");
                             control_stepper(-SAFE_SPEED, true);
                         }
                     }
