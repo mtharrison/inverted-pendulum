@@ -35,6 +35,11 @@
 // Filter Configuration
 #define VELOCITY_FILTER_ALPHA 0.2f
 
+// Smoothing Configuration
+#define SPEED_SMOOTHING_ENABLED true    // Can be set to false to disable smoothing
+#define SPEED_SMOOTHING_RATE 0.2f       // Higher = faster response (0.0-1.0)
+#define SPEED_UPDATE_PERIOD_MS 5        // How often speed is updated (ms)
+
 // Network Configuration
 extern const char* WIFI_SSID;
 extern const char* WIFI_PASSWORD;

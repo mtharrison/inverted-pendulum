@@ -84,7 +84,9 @@ static void update_step_pattern() {
 
 // Target speed for acceleration control
 static int target_speed = 0;
+static int current_target_speed = 0;  // Smoothed target speed
 static unsigned long last_accel_time = 0;
+static unsigned long last_smoothing_time = 0;
 
 // Start or stop the stepping
 static void control_stepper(int speed) {
@@ -357,30 +359,46 @@ void act(void* parameters) {
             } else {
                 // Normal operation - motorState.speed is already scaled in communicate.cpp
                 // Just constrain it to MAX_SPEED
-                int target_speed = (int)constrain(abs(motorState.speed), 0.0f, (float)MAX_SPEED);
+                int raw_target_speed = (int)constrain(abs(motorState.speed), 0.0f, (float)MAX_SPEED);
                 
                 // Apply direction from motorState.speed
                 if (motorState.speed < 0) {
-                    target_speed = -target_speed;
+                    raw_target_speed = -raw_target_speed;
                 }
-                
-                // // Extended debug output
-                // USBSerial.printf("Speed value: %f, Target: %d, Current: %d, Direction: %d, Running: %d\n", 
-                //     motorState.speed, target_speed, current_speed, current_direction, is_running);
                 
                 // Check limit switches and prevent motion in that direction
-                if ((motorState.limitL && target_speed < 0) || 
-                    (motorState.limitR && target_speed > 0)) {
-                    target_speed = 0;
+                if ((motorState.limitL && raw_target_speed < 0) || 
+                    (motorState.limitR && raw_target_speed > 0)) {
+                    raw_target_speed = 0;
                 }
                 
-                // Compare with the last speed we set
-                if (target_speed != last_speed) {
-                    // USBSerial.printf("Speed changed from %d to %d\n", last_speed, target_speed);
-                    last_speed = target_speed;
+                // Apply speed smoothing
+                if (SPEED_SMOOTHING_ENABLED) {
+                    // Update the target speed for smoothing
+                    target_speed = raw_target_speed;
                     
-                    // Use the new control_stepper implementation without acceleration
-                    control_stepper(target_speed);
+                    // Check if it's time to update the smoothed speed
+                    unsigned long current_time = millis();
+                    if (current_time - last_smoothing_time >= SPEED_UPDATE_PERIOD_MS) {
+                        last_smoothing_time = current_time;
+                        
+                        // Apply low-pass filter to smooth speed changes
+                        // current_target_speed = current_target_speed * (1-rate) + target_speed * rate
+                        current_target_speed = current_target_speed + 
+                            (int)((float)(target_speed - current_target_speed) * SPEED_SMOOTHING_RATE);
+                        
+                        // Check if speed has changed enough to update
+                        if (current_target_speed != last_speed) {
+                            last_speed = current_target_speed;
+                            control_stepper(current_target_speed);
+                        }
+                    }
+                } else {
+                    // No smoothing - apply speed directly if changed
+                    if (raw_target_speed != last_speed) {
+                        last_speed = raw_target_speed;
+                        control_stepper(raw_target_speed);
+                    }
                 }
             }
         } else {
