@@ -34,6 +34,7 @@
 
 // Filter Configuration
 #define VELOCITY_FILTER_ALPHA 0.2f
+#define TARGET_SPEED_FILTER_ALPHA 0.1f
 
 // Network Configuration
 extern const char* WIFI_SSID;

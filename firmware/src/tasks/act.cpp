@@ -84,6 +84,7 @@ static void update_step_pattern() {
 
 // Target speed for acceleration control
 static int target_speed = 0;
+static int filtered_target_speed = 0;
 static unsigned long last_accel_time = 0;
 
 // Start or stop the stepping
@@ -364,23 +365,27 @@ void act(void* parameters) {
                     target_speed = -target_speed;
                 }
                 
-                // // Extended debug output
-                // USBSerial.printf("Speed value: %f, Target: %d, Current: %d, Direction: %d, Running: %d\n", 
-                //     motorState.speed, target_speed, current_speed, current_direction, is_running);
-                
                 // Check limit switches and prevent motion in that direction
                 if ((motorState.limitL && target_speed < 0) || 
                     (motorState.limitR && target_speed > 0)) {
                     target_speed = 0;
                 }
                 
+                // Apply low-pass filter to the target speed
+                filtered_target_speed = (int)(TARGET_SPEED_FILTER_ALPHA * target_speed + 
+                                            (1.0f - TARGET_SPEED_FILTER_ALPHA) * filtered_target_speed);
+                
+                // // Extended debug output
+                // USBSerial.printf("Speed value: %f, Target: %d, Filtered: %d, Current: %d\n", 
+                //     motorState.speed, target_speed, filtered_target_speed, current_speed);
+                
                 // Compare with the last speed we set
-                if (target_speed != last_speed) {
-                    // USBSerial.printf("Speed changed from %d to %d\n", last_speed, target_speed);
-                    last_speed = target_speed;
+                if (filtered_target_speed != last_speed) {
+                    // USBSerial.printf("Speed changed from %d to %d\n", last_speed, filtered_target_speed);
+                    last_speed = filtered_target_speed;
                     
                     // Use the new control_stepper implementation without acceleration
-                    control_stepper(target_speed);
+                    control_stepper(filtered_target_speed);
                 }
             }
         } else {
@@ -388,6 +393,7 @@ void act(void* parameters) {
             if (last_speed != 0) {
                 control_stepper(0);
                 last_speed = 0;
+                filtered_target_speed = 0;
             }
             
             // Reset the reset state if motor is disabled
@@ -397,6 +403,6 @@ void act(void* parameters) {
         }
         
         // Yield to other tasks
-        vTaskDelay(pdMS_TO_TICKS(5));
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
