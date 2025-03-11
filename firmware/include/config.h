@@ -11,11 +11,11 @@
 #define DIR_PIN             4
 #define ENCODER_PIN_A       18
 #define ENCODER_PIN_B       8
-#define LIMIT_L_PIN         17
-#define LIMIT_R_PIN         16
+#define LIMIT_L_PIN         16
+#define LIMIT_R_PIN         17
 
 #define MICROSTEPS          1600
-#define MAX_SPEED           (80000)
+#define MAX_SPEED           (20000)
 #define MAX_ACCEL           (50000)
 #define SAFE_SPEED          4000
 
