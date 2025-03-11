@@ -16,7 +16,7 @@
 
 #define MICROSTEPS          1600
 #define MAX_SPEED           (20000)
-#define MAX_ACCEL           (50000)
+#define MAX_ACCEL           (10000)  // Reduced to make acceleration more noticeable
 #define SAFE_SPEED          4000
 
 // Task Configuration

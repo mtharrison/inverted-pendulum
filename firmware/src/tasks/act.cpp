@@ -51,26 +51,47 @@ static void IRAM_ATTR rmt_tx_callback(rmt_channel_t channel, void *arg) {
 
 // Calculate RMT period from speed (steps/second)
 static uint32_t speed_to_rmt_period(int speed) {
-    if (speed <= 0) return 0;
+    // Handle edge cases properly
+    if (speed <= 0) {
+        USBSerial.println("WARNING: speed_to_rmt_period called with zero or negative speed");
+        return 10000;  // Default to a slow speed (100 steps/sec)
+    }
     
     // Convert speed to period in microseconds
     uint32_t period_us = 1000000 / speed;
     
     // Clamp to reasonable values - adjusted for higher resolution
-    if (period_us < 12) period_us = 12;  // Max ~83,333 steps/sec with 0.25us resolution
-    if (period_us > 10000) period_us = 10000;  // Min 100 steps/sec
+    if (period_us < 12) {
+        USBSerial.printf("WARNING: Clamping period %u to 12us (max speed)\n", period_us);
+        period_us = 12;  // Max ~83,333 steps/sec with 0.25us resolution
+    }
+    if (period_us > 10000) {
+        USBSerial.printf("WARNING: Clamping period %u to 10000us (min speed)\n", period_us);
+        period_us = 10000;  // Min 100 steps/sec
+    }
     
     return period_us;
 }
 
 // Update the RMT step pattern based on current speed
 static void update_step_pattern() {
+    // For debug purposes, track the last period we calculated
+    static uint32_t last_period_us = 0;
+    
+    // Stop if speed is zero
     if (current_speed == 0) {
         is_running = false;
         return;
     }
     
     uint32_t period_us = speed_to_rmt_period(abs(current_speed));
+    
+    // Only log when period changes significantly (more than 5%)
+    if (abs((int)period_us - (int)last_period_us) > last_period_us / 20) {
+        USBSerial.printf("Step pattern updated: speed=%d, period=%u us\n", 
+                          current_speed, period_us);
+        last_period_us = period_us;
+    }
     
     // With RMT_CLK_DIV=20, each tick is 0.25us, so multiply microseconds by 4
     uint32_t period_ticks = period_us * 4;
@@ -84,8 +105,9 @@ static void update_step_pattern() {
 
 // Target speed for acceleration control
 static int target_speed = 0;
-static unsigned long last_accel_time = 0;
+static unsigned long last_accel_time = 0; // Will be initialized in act() function
 static bool reset_mode = false;
+static bool acceleration_initialized = false;
 
 // Start or stop the stepping
 static void control_stepper(int speed, bool bypass_accel = false) {
@@ -134,15 +156,25 @@ static void control_stepper(int speed, bool bypass_accel = false) {
     }
     
     // Set target speed
-    target_speed = direction ? speed : -speed;
+    int new_target_speed = direction ? speed : -speed;
+    
+    // Log when target changes significantly
+    if (new_target_speed != target_speed) {
+        USBSerial.printf("Target speed changed from %d to %d\n", target_speed, new_target_speed);
+        target_speed = new_target_speed;
+    }
     
     // In bypass_accel mode (reset), apply speed immediately
     if (bypass_accel) {
         current_speed = target_speed;
         USBSerial.printf("Setting current_speed directly to %d (bypass_accel mode)\n", current_speed);
+        
+        // Reset last_accel_time to prevent large jumps when returning to normal mode
+        last_accel_time = millis();
     } else {
         // In normal mode, we'll use acceleration in the act task loop
-        USBSerial.printf("Set target_speed to %d (with acceleration)\n", target_speed);
+        USBSerial.printf("Set target_speed to %d (current=%d, with acceleration)\n", 
+                         target_speed, current_speed);
     }
     
     // Update the step pattern
@@ -158,8 +190,8 @@ static void control_stepper(int speed, bool bypass_accel = false) {
 
 // Apply acceleration to gradually change speed
 static void apply_acceleration() {
-    // Skip if we're in reset mode (bypass_accel was true)
-    if (reset_mode) return;
+    // Ensure initialization and skip if in reset mode
+    if (!acceleration_initialized || reset_mode) return;
     
     // Only do acceleration if current_speed differs from target_speed
     if (current_speed != target_speed) {
@@ -178,6 +210,13 @@ static void apply_acceleration() {
             // Ensure we make at least 1 step of progress if accel_step calculates to 0
             if (accel_step == 0) accel_step = 1;
             
+            // Limit acceleration step to prevent large jumps after long delays
+            // This is especially important at startup
+            accel_step = min(accel_step, 500);
+            
+            // Store previous speed for debug output
+            int prev_speed = current_speed;
+            
             // Accelerate or decelerate toward target_speed
             if (current_speed < target_speed) {
                 current_speed = min(current_speed + accel_step, target_speed);
@@ -185,17 +224,23 @@ static void apply_acceleration() {
                 current_speed = max(current_speed - accel_step, target_speed);
             }
             
-            // Debug output - uncomment if needed
-            // USBSerial.printf("Accelerating: current=%d, target=%d, accel_step=%d\n", 
-            //    current_speed, target_speed, accel_step);
-            
-            // Update the step pattern for the new speed
-            update_step_pattern();
-            
-            // Start stepping if needed
-            if (!is_running && abs(current_speed) > 0) {
-                is_running = true;
-                ESP_ERROR_CHECK(rmt_write_items(RMT_CHANNEL, rmt_step_pattern, 1, false));
+            // Only update pattern and log if speed actually changed
+            if (prev_speed != current_speed) {
+                // Debug output every 10 speed changes to make acceleration more visible
+                static int debug_counter = 0;
+                if (++debug_counter % 10 == 0) {
+                    USBSerial.printf("Accelerating: current=%d, target=%d, accel_step=%d, delta=%d\n", 
+                        current_speed, target_speed, accel_step, current_speed - prev_speed);
+                }
+                
+                // Update the step pattern for the new speed
+                update_step_pattern();
+                
+                // Start stepping if needed
+                if (!is_running && abs(current_speed) > 0) {
+                    is_running = true;
+                    ESP_ERROR_CHECK(rmt_write_items(RMT_CHANNEL, rmt_step_pattern, 1, false));
+                }
             }
         }
     }
@@ -384,6 +429,13 @@ void act(void* parameters) {
     digitalWrite(MOTOR_ENABLE_PIN, HIGH);  // Assuming HIGH is disable, adjust if needed
     digitalWrite(STEP_PIN, LOW);
     digitalWrite(DIR_PIN, LOW);
+    
+    // Initialize acceleration timing
+    last_accel_time = millis();
+    acceleration_initialized = true;
+    
+    // Debug message at startup
+    USBSerial.println("Motor control initialized with acceleration enabled");
     
     // Configure RMT for step generation
     rmt_config_t rmt_cfg = {};
