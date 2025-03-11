@@ -1,6 +1,8 @@
 #ifndef TASK_H
 #define TASK_H
 
+#include "freertos/task.h"
+
 void communicate(void* parameters);
 void act(void* parameters);
 void monitor(void* parameters);
