@@ -53,7 +53,6 @@ static void IRAM_ATTR rmt_tx_callback(rmt_channel_t channel, void *arg) {
 static uint32_t speed_to_rmt_period(int speed) {
     // Handle edge cases properly
     if (speed <= 0) {
-        USBSerial.println("WARNING: speed_to_rmt_period called with zero or negative speed");
         return 10000;  // Default to a slow speed (100 steps/sec)
     }
     
@@ -62,11 +61,9 @@ static uint32_t speed_to_rmt_period(int speed) {
     
     // Clamp to reasonable values - adjusted for higher resolution
     if (period_us < 12) {
-        USBSerial.printf("WARNING: Clamping period %u to 12us (max speed)\n", period_us);
         period_us = 12;  // Max ~83,333 steps/sec with 0.25us resolution
     }
     if (period_us > 10000) {
-        USBSerial.printf("WARNING: Clamping period %u to 10000us (min speed)\n", period_us);
         period_us = 10000;  // Min 100 steps/sec
     }
     
@@ -75,9 +72,6 @@ static uint32_t speed_to_rmt_period(int speed) {
 
 // Update the RMT step pattern based on current speed
 static void update_step_pattern() {
-    // For debug purposes, track the last period we calculated
-    static uint32_t last_period_us = 0;
-    
     // Stop if speed is zero
     if (current_speed == 0) {
         is_running = false;
@@ -85,13 +79,6 @@ static void update_step_pattern() {
     }
     
     uint32_t period_us = speed_to_rmt_period(abs(current_speed));
-    
-    // Only log when period changes significantly (more than 5%)
-    if (abs((int)period_us - (int)last_period_us) > last_period_us / 20) {
-        USBSerial.printf("Step pattern updated: speed=%d, period=%u us\n", 
-                          current_speed, period_us);
-        last_period_us = period_us;
-    }
     
     // With RMT_CLK_DIV=20, each tick is 0.25us, so multiply microseconds by 4
     uint32_t period_ticks = period_us * 4;
@@ -111,12 +98,9 @@ static bool acceleration_initialized = false;
 
 // Start or stop the stepping
 static void control_stepper(int speed, bool bypass_accel = false) {
-    // Log input speed for debugging
+    // Track last speed
     static int last_logged_speed = 0;
-    if (speed != last_logged_speed) {
-        USBSerial.printf("control_stepper called with speed = %d\n", speed);
-        last_logged_speed = speed;
-    }
+    last_logged_speed = speed;
 
     // Store if we're in reset mode (used during handle_reset())
     reset_mode = bypass_accel;
@@ -128,7 +112,6 @@ static void control_stepper(int speed, bool bypass_accel = false) {
     if (speed == 0) {
         if (is_running) {
             is_running = false;
-            USBSerial.println("Stopping motor");
         }
         current_speed = 0;
         target_speed = 0;
@@ -140,7 +123,6 @@ static void control_stepper(int speed, bool bypass_accel = false) {
         // Stop first if running
         if (is_running) {
             is_running = false;
-            USBSerial.println("Stopping before direction change");
             
             // Wait for motor to fully stop
             delay(50);  // 50ms full stop
@@ -148,7 +130,6 @@ static void control_stepper(int speed, bool bypass_accel = false) {
         
         // Update direction
         current_direction = direction;
-        USBSerial.printf("Setting direction pin to %s\n", direction ? "LOW (RIGHT)" : "HIGH (LEFT)");
         
         // Set direction pin - reversed to match actual hardware behavior
         digitalWrite(DIR_PIN, direction ? LOW : HIGH);
@@ -158,31 +139,25 @@ static void control_stepper(int speed, bool bypass_accel = false) {
     // Set target speed
     int new_target_speed = direction ? speed : -speed;
     
-    // Log when target changes significantly
+    // Update target speed when it changes
     if (new_target_speed != target_speed) {
-        USBSerial.printf("Target speed changed from %d to %d\n", target_speed, new_target_speed);
         target_speed = new_target_speed;
     }
     
     // In bypass_accel mode (reset), apply speed immediately
     if (bypass_accel) {
         current_speed = target_speed;
-        USBSerial.printf("Setting current_speed directly to %d (bypass_accel mode)\n", current_speed);
         
         // Reset last_accel_time to prevent large jumps when returning to normal mode
         last_accel_time = millis();
-    } else {
-        // In normal mode, we'll use acceleration in the act task loop
-        USBSerial.printf("Set target_speed to %d (current=%d, with acceleration)\n", 
-                         target_speed, current_speed);
     }
+    // In normal mode, we'll use acceleration in the act task loop
     
     // Update the step pattern
     update_step_pattern();
     
     // Start stepping if not already running
     if (!is_running && abs(current_speed) > 0) {
-        USBSerial.println("Starting motor");
         is_running = true;
         ESP_ERROR_CHECK(rmt_write_items(RMT_CHANNEL, rmt_step_pattern, 1, false));
     }
@@ -224,15 +199,8 @@ static void apply_acceleration() {
                 current_speed = max(current_speed - accel_step, target_speed);
             }
             
-            // Only update pattern and log if speed actually changed
-            if (prev_speed != current_speed) {
-                // Debug output every 10 speed changes to make acceleration more visible
-                static int debug_counter = 0;
-                if (++debug_counter % 10 == 0) {
-                    USBSerial.printf("Accelerating: current=%d, target=%d, accel_step=%d, delta=%d\n", 
-                        current_speed, target_speed, accel_step, current_speed - prev_speed);
-                }
-                
+            // Only update pattern if speed actually changed
+            if (prev_speed != current_speed) {                
                 // Update the step pattern for the new speed
                 update_step_pattern();
                 
@@ -433,9 +401,6 @@ void act(void* parameters) {
     // Initialize acceleration timing
     last_accel_time = millis();
     acceleration_initialized = true;
-    
-    // Debug message at startup
-    USBSerial.println("Motor control initialized with acceleration enabled");
     
     // Configure RMT for step generation
     rmt_config_t rmt_cfg = {};
