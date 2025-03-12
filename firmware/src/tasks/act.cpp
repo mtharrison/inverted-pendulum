@@ -175,7 +175,7 @@ static void apply_acceleration() {
         unsigned long elapsed = now - last_accel_time;
         
         // Update at most every 5ms
-        if (elapsed >= 5) {
+        if (elapsed >= 1) {
             last_accel_time = now;
             
             // Calculate max step change based on elapsed time and MAX_ACCEL
