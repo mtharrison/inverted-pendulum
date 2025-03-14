@@ -11,8 +11,7 @@ PendulumState motorState;
 
 void setup() {
     USBSerial.begin(115200);
-    disableCore0WDT();
-    disableCore1WDT();
+    
 
     // Create tasks
     xTaskCreatePinnedToCore(
@@ -22,7 +21,7 @@ void setup() {
         NULL, 
         5, 
         NULL, 
-        1
+        0
     );
 
     xTaskCreatePinnedToCore(
@@ -44,6 +43,9 @@ void setup() {
         NULL, 
         1
     );
+
+    disableCore0WDT();
+    disableCore1WDT();
 }
 
 void loop() {

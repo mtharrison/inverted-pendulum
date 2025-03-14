@@ -85,7 +85,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         action = np.clip(action, -1.0, 1.0)[0]
         self.client.move(action.item())
 
-        while (time.perf_counter() - self.t) < 0.005:
+        while (time.perf_counter() - self.t) < 0.05:
             pass
 
         response = self.client.sense()

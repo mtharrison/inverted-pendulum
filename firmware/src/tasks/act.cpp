@@ -65,6 +65,7 @@ static uint32_t speed_to_rmt_period(int speed) {
 
 // Update the RMT step pattern based on current speed
 static void update_step_pattern() {
+    // USBSerial.printf("Updating step pattern for speed %d\n", current_speed);
     if (current_speed == 0) {
         is_running = false;
         return;
@@ -91,7 +92,7 @@ static void control_stepper(int speed) {
     // Log input speed for debugging
     static int last_logged_speed = 0;
     if (speed != last_logged_speed) {
-        USBSerial.printf("control_stepper called with speed = %d\n", speed);
+        // USBSerial.printf("control_stepper called with speed = %d\n", speed);
         last_logged_speed = speed;
     }
 
@@ -102,7 +103,7 @@ static void control_stepper(int speed) {
     if (speed == 0) {
         if (is_running) {
             is_running = false;
-            USBSerial.println("Stopping motor");
+            // USBSerial.println("Stopping motor");
         }
         current_speed = 0;
         return;
@@ -113,15 +114,15 @@ static void control_stepper(int speed) {
         // Stop first if running
         if (is_running) {
             is_running = false;
-            USBSerial.println("Stopping before direction change");
+            // USBSerial.println("Stopping before direction change");
             
             // Wait for motor to fully stop
-            delay(50);  // 50ms full stop
+            // delay(50);  // 50ms full stop
         }
         
         // Update direction
         current_direction = direction;
-        USBSerial.printf("Setting direction pin to %s\n", direction ? "LOW (RIGHT)" : "HIGH (LEFT)");
+        // USBSerial.printf("Setting direction pin to %s\n", direction ? "LOW (RIGHT)" : "HIGH (LEFT)");
         
         // Set direction pin - reversed to match actual hardware behavior
         digitalWrite(DIR_PIN, direction ? LOW : HIGH);
@@ -130,14 +131,14 @@ static void control_stepper(int speed) {
     
     // Set new speed directly - no acceleration for now to simplify debugging
     current_speed = direction ? speed : -speed;
-    USBSerial.printf("Setting current_speed to %d\n", current_speed);
+    // USBSerial.printf("Setting current_speed to %d\n", current_speed);
     
     // Update the step pattern
     update_step_pattern();
     
     // Start stepping if not already running
     if (!is_running && speed > 0) {
-        USBSerial.println("Starting motor");
+        // USBSerial.println("Starting motor");
         is_running = true;
         ESP_ERROR_CHECK(rmt_write_items(RMT_CHANNEL, rmt_step_pattern, 1, false));
     }
@@ -246,7 +247,7 @@ static void handle_reset(PendulumState &state) {
             if (!state.limitR && state.current_position > 50000) {
                 // Emergency stop if we've gone too far
                 control_stepper(0);
-                USBSerial.println("Emergency stop - exceeded right position limit");
+                // USBSerial.println("Emergency stop - exceeded right position limit");
                 reset_state = RESET_IDLE;
                 state.resetting = false;
             }
@@ -256,14 +257,14 @@ static void handle_reset(PendulumState &state) {
             {
                 int center_position = (left_position + right_position) / 2;
 
-                USBSerial.print(center_position);
-                USBSerial.print(" | ");
-                USBSerial.print(state.current_position);
-                USBSerial.print(" | ");
-                USBSerial.print(current_direction);
-                USBSerial.print(" | ");
-                USBSerial.print(current_speed);
-                USBSerial.print("\n");
+                // USBSerial.print(center_position);
+                // USBSerial.print(" | ");
+                // USBSerial.print(state.current_position);
+                // USBSerial.print(" | ");
+                // USBSerial.print(current_direction);
+                // USBSerial.print(" | ");
+                // USBSerial.print(current_speed);
+                // USBSerial.print("\n");
                 
                 // Log progress to center periodically
                 static int center_debug_counter = 0;
