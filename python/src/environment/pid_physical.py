@@ -121,6 +121,7 @@ class PIDControlledPendulum(InvertedPendulumContinuousControlPhysical):
             # Simple energy-based swing-up controller
             theta = math.atan2(obs[3], obs[2])
             theta_dot = obs[4]
+            x = obs[0]  # Cart position normalized
             
             # Check if we're close to the upright position
             if abs(theta) < 0.3:  # About 17 degrees from vertical
@@ -136,9 +137,24 @@ class PIDControlledPendulum(InvertedPendulumContinuousControlPhysical):
                 # Energy-based swing-up: E = 0.5*m*l²*θ̇² - m*g*l*cos(θ)
                 # We'll use a simplified version with just the cos term
                 energy = math.cos(theta)
-                # Drive the pendulum by adding energy when needed
+                
+                # Gentle swing-up with position limits
                 energy_error = 1.0 - energy  # Target energy for upright position
-                control_action = np.sign(theta_dot * math.cos(theta)) * min(1.0, abs(energy_error) * 3)
+                
+                # Basic control signal - direction based on angular momentum
+                base_signal = np.sign(theta_dot * math.cos(theta))
+                
+                # Scale based on error and limit max force
+                magnitude = min(0.7, abs(energy_error) * 1.5)
+                
+                # Add position limiting factor to avoid hitting extents
+                # Generate counter-force when approaching limits
+                position_limit = 0.0
+                if abs(x) > 0.7:  # When cart is getting far from center
+                    position_limit = -np.sign(x) * min(0.5, (abs(x) - 0.7) * 2.0)
+                
+                # Combine energy control with position limiting
+                control_action = base_signal * magnitude + position_limit
         else:
             # Fall back to direct action if mode is invalid
             control_action = 0.0
