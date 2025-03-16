@@ -70,6 +70,11 @@ class PIDControlledPendulum(InvertedPendulumContinuousControlPhysical):
         
         # For swing-up
         self.energy_controller = PIDController(kp=0.5, ki=0.0, kd=0.0, setpoint=1.0)
+        
+        # Track hardware extents and safe operating range
+        self.extent = 1000  # Default value, will be updated during reset
+        self.safe_zone_percentage = 0.7  # Use 70% of total range as "safe zone"
+        self.danger_zone_percentage = 0.85  # At 85% of range, prioritize centering
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict] = None
@@ -83,6 +88,12 @@ class PIDControlledPendulum(InvertedPendulumContinuousControlPhysical):
         self.time_at_balance = 0
         self.max_time_at_balance = 0
         self.current_balance_streak = 0
+        
+        # Get and store the hardware extent from the initial reading
+        response = self.client.sense()
+        if response and 'extent' in response:
+            self.extent = response['extent']
+            print(f"Hardware extent detected: {self.extent}")
         
         return obs, info
     
@@ -146,14 +157,30 @@ class PIDControlledPendulum(InvertedPendulumContinuousControlPhysical):
                 energy_error = desired_energy - energy
                 
                 # Center the cart if it's too far from center
+                # Get the current position in terms of absolute position
+                # x is normalized, so x=1.0 means we're at the extent
+                abs_position = abs(x)
+                
+                # Calculate safe thresholds based on actual hardware extents
+                safe_threshold = self.safe_zone_percentage  # e.g., 0.7 means 70% of max travel
+                danger_threshold = self.danger_zone_percentage  # e.g., 0.85 means 85% of max travel
+                
+                # Apply centering force that increases as we get closer to the limits
                 center_signal = 0.0
-                if abs(x) > 0.5:  # When cart is getting far from center
-                    # Strong centering force to avoid hitting limits
-                    center_signal = -np.sign(x) * min(0.9, abs(x) * 1.2)
-                    # Override with centering action if too far from center
-                    if abs(x) > 0.75:
+                if abs_position > safe_threshold:
+                    # Calculate how far into the danger zone we are (0 to 1)
+                    danger_factor = (abs_position - safe_threshold) / (1.0 - safe_threshold)
+                    # Strong centering force that scales with how close we are to the limits
+                    center_signal = -np.sign(x) * min(0.95, 0.5 + danger_factor * 1.2)
+                    
+                    # Log extreme positions
+                    if abs_position > 0.9:
+                        print(f"WARNING: Cart very close to limit: {abs_position:.2f} of max range")
+                    
+                    # Override with pure centering action if in extreme danger zone
+                    if abs_position > danger_threshold:
                         control_action = center_signal
-                        return control_action  # Exit early with just the centering action
+                        # Don't return early, just use the centering action as our control signal
                 
                 # The basic idea: apply force in the direction that will increase energy
                 # When pendulum moving away from down position, push in same direction
@@ -173,8 +200,16 @@ class PIDControlledPendulum(InvertedPendulumContinuousControlPhysical):
                         # This removes energy from the system
                         control_action = -0.85 * np.sign(theta_dot)
                 
-                # Add a small component of the centering force
-                control_action = control_action * 0.8 + center_signal * 0.2
+                # Add a component of the centering force that increases with proximity to limits
+                if abs_position > safe_threshold:
+                    # Increase the center_signal weight as we get closer to the limits
+                    center_weight = min(0.8, danger_factor * 1.5)
+                    control_weight = 1.0 - center_weight
+                    control_action = control_action * control_weight + center_signal * center_weight
+                    
+                    # Debug info for tuning
+                    if self.t % 50 == 0 and abs_position > 0.75:
+                        print(f"Position: {abs_position:.2f}, Center weight: {center_weight:.2f}, Action: {control_action:.2f}")
         else:
             # Fall back to direct action if mode is invalid
             control_action = 0.0
