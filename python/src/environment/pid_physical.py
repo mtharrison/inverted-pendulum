@@ -134,27 +134,47 @@ class PIDControlledPendulum(InvertedPendulumContinuousControlPhysical):
                     current_time=time.perf_counter()
                 )
             else:
-                # Energy-based swing-up: E = 0.5*m*l²*θ̇² - m*g*l*cos(θ)
-                # We'll use a simplified version with just the cos term
-                energy = math.cos(theta)
+                # Better energy-based swing-up controller
+                # Phase control approach - push when it makes sense to add energy
                 
-                # Gentle swing-up with position limits
-                energy_error = 1.0 - energy  # Target energy for upright position
+                # Calculate current energy (simplified)
+                energy = 0.5 * (theta_dot ** 2) - math.cos(theta)
+                # Energy needed for upright position is about 1
+                desired_energy = 1.0
                 
-                # Basic control signal - direction based on angular momentum
-                base_signal = np.sign(theta_dot * math.cos(theta))
+                # Energy error
+                energy_error = desired_energy - energy
                 
-                # Scale based on error and limit max force
-                magnitude = min(0.7, abs(energy_error) * 1.5)
+                # Center the cart if it's too far from center
+                center_signal = 0.0
+                if abs(x) > 0.5:  # When cart is getting far from center
+                    # Strong centering force to avoid hitting limits
+                    center_signal = -np.sign(x) * min(0.9, abs(x) * 1.2)
+                    # Override with centering action if too far from center
+                    if abs(x) > 0.75:
+                        control_action = center_signal
+                        return control_action  # Exit early with just the centering action
                 
-                # Add position limiting factor to avoid hitting extents
-                # Generate counter-force when approaching limits
-                position_limit = 0.0
-                if abs(x) > 0.7:  # When cart is getting far from center
-                    position_limit = -np.sign(x) * min(0.5, (abs(x) - 0.7) * 2.0)
+                # The basic idea: apply force in the direction that will increase energy
+                # When pendulum moving away from down position, push in same direction
+                # When pendulum moving toward down position, push in opposite direction
+                if abs(theta) < math.pi/2:
+                    # Pendulum in upper half - keep it there or help it go up
+                    # Apply force away from current angle to create torque
+                    control_action = 0.85 * np.sign(theta)
+                else:
+                    # Pendulum in lower half
+                    if energy < desired_energy:
+                        # Need more energy - push in direction of angular velocity
+                        # This adds energy to the system
+                        control_action = 0.85 * np.sign(theta_dot)
+                    else:
+                        # Too much energy or close to desired - push against velocity
+                        # This removes energy from the system
+                        control_action = -0.85 * np.sign(theta_dot)
                 
-                # Combine energy control with position limiting
-                control_action = base_signal * magnitude + position_limit
+                # Add a small component of the centering force
+                control_action = control_action * 0.8 + center_signal * 0.2
         else:
             # Fall back to direct action if mode is invalid
             control_action = 0.0
