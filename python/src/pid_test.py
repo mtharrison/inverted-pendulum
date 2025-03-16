@@ -154,16 +154,17 @@ def interactive_tuning(port):
                       f"Pos={obs[0]:.2f}, Balanced: {info['is_balanced']}")
             
             # Check for keyboard input (non-blocking)
-            import msvcrt if hasattr(msvcrt, 'kbhit') else __import__('select')
-            
             # Platform-specific input handling
             has_input = False
-            if hasattr(msvcrt, 'kbhit'):  # Windows
+            try:
+                # Try Windows input method
+                import msvcrt
                 has_input = msvcrt.kbhit()
                 if has_input:
                     key = msvcrt.getch().decode('utf-8').lower()
-            else:  # Unix-like
-                import sys, tty, termios
+            except ImportError:
+                # Unix-like input method
+                import sys, tty, termios, select
                 old_settings = termios.tcgetattr(sys.stdin)
                 try:
                     tty.setcbreak(sys.stdin.fileno())
