@@ -85,12 +85,13 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         action = np.clip(action, -1.0, 1.0)[0]
         self.client.move(action.item())
 
-        while (time.perf_counter() - self.t) < 0.05:
+        while (time.perf_counter() - self.last_time) < 0.01:
             pass
-
+        # print(time.perf_counter() - self.last_time)
+        self.last_time = time.perf_counter()
         response = self.client.sense()
         # print(f"Elapsed time: {(time.perf_counter() - self.last_time) * 1000}ms")
-        self.last_time = time.perf_counter()
+        
 
         if response is None:
             return self.last_step_return
@@ -110,8 +111,12 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         terminated = (limitL or limitR) or abs(obs[4]) > 16.0
         truncated = bool(self.t >= self.t_limit)
         self.t += 1
+        
+        # print(self.t, truncated)
 
-        reward = 0.5 * (1 + obs[2])
+        pos_reward = 0.5 * (1 + obs[2])
+        vel_reward = 0.1 * (1 - min(1, abs(obs[4])/10))  # Normalized velocity reward
+        reward = pos_reward + vel_reward
         # Update GUI and episode data
         self.last_step_return = (
             obs,
@@ -120,7 +125,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
             bool(truncated),
             {},
         )
-
+        
         return obs, float(reward), bool(terminated), bool(truncated), {}
 
     def __del__(self) -> None:

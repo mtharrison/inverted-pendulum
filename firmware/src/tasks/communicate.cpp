@@ -42,7 +42,7 @@ void communicate(void* parameters)
                     float speed = pm.argument;
                     if (motorState.enabled && !motorState.resetting) 
                     {
-                        motorState.speed = speed * MAX_SPEED;
+                        motorState.speed = speed;
                     }
                     sendState(pm.id);
                 }

@@ -97,13 +97,24 @@ def train(environment_class, data_queue, signal_queue):
     agent = SAC(
         MlpPolicy,
         env,
-        verbose=1,
-        tensorboard_log="./tensorboard_logs",
-        train_freq=(1, "episode"),
-        learning_starts=1000,
-        gradient_steps=1000,
-        ent_coef=0.1,
-        learning_rate=3e-4
+        learning_rate=0.0005,         # Return to default as updates are less frequent
+    buffer_size=1000000,           # Keep larger buffer
+    learning_starts=3,            # Changed to number of episodes (not steps)
+    batch_size=1024,               # Increase batch size for episode-based training
+    tau=0.005,                    # Default still good
+    gamma=0.999,                  # Keep higher gamma for 10ms period
+    train_freq=(1, "episode"),    # Train once per episode
+    gradient_steps=-1, # Scale gradient steps with episode length
+                                  # (or set to a fixed larger number like 200)
+    ent_coef='auto',              # Auto-tuning still recommended
+    target_update_interval=1,     # Update targets every episode
+    policy_kwargs=dict(
+        net_arch=dict(
+            pi=[512, 512],
+            qf=[512, 512]
+        )
+    ),
+    verbose=1
     )
 
     agent.learn(total_timesteps=1000000, callback=StateQueueCallback(data_queue))
