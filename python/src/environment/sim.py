@@ -42,7 +42,8 @@ class InvertedPendulumContinuousControlSim(Env):
                 np.finfo(np.float32).max,
             ]
         )
-        self.action_space = spaces.Box(-1.0, 1.0, shape=(1,))
+        # Discrete action space: 0=left, 1=no move, 2=right
+        self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(-high, high)
 
         # Rendering
@@ -64,8 +65,15 @@ class InvertedPendulumContinuousControlSim(Env):
         self.initial_theta = None
 
     def step(self, action):
-        action = np.clip(action, -1.0, 1.0)[0]
-        action *= self.force_mag
+        # Convert discrete action to continuous force
+        # 0=left, 1=no move, 2=right
+        if action == 0:  # Left
+            force = -self.force_mag
+        elif action == 2:  # Right
+            force = self.force_mag
+        else:  # No move (action == 1)
+            force = 0.0
+        action = force
 
         state = self.state
         x, x_dot, theta, theta_dot = state

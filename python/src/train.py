@@ -9,8 +9,8 @@ from environment.sim import InvertedPendulumContinuousControlSim
 from environment.physical import InvertedPendulumContinuousControlPhysical
 from gui import PendulumVisualizerDPG
 
-from stable_baselines3.sac.policies import MlpPolicy
-from stable_baselines3 import SAC
+from stable_baselines3.dqn.policies import MlpPolicy
+from stable_baselines3 import DQN
 from stable_baselines3.common.callbacks import BaseCallback
 
 
@@ -35,6 +35,15 @@ class StateQueueCallback(BaseCallback):
         x_dot = self.locals["new_obs"][0][1]
         theta_dot = self.locals["new_obs"][0][4]
         current_state = self.training_env.envs[0].unwrapped.state
+        
+        # Get the discrete action and convert for visualization
+        action = self.locals["actions"][0]
+        if action == 0:  # Left
+            action_value = -1.0
+        elif action == 2:  # Right
+            action_value = 1.0
+        else:  # No move
+            action_value = 0.0
 
         self.state_queue.put(
             {
@@ -45,6 +54,7 @@ class StateQueueCallback(BaseCallback):
                     "current_position": x,
                     "target_position": x,
                     "velocity": x_dot,
+                    "action": action_value,  # Add action for visualization
                     "limitL": False,
                     "limitR": False,
                     "enabled": True,
@@ -94,26 +104,24 @@ class StateQueueCallback(BaseCallback):
 def train(environment_class, data_queue, signal_queue):
     env = environment_class()
 
-    agent = SAC(
+    agent = DQN(
         MlpPolicy,
         env,
-        learning_rate=0.0003,         # Return to default as updates are less frequent
-    buffer_size=500000,           # Keep larger buffer
-    learning_starts=3,            # Changed to number of episodes (not steps)
-    batch_size=1024,               # Increase batch size for episode-based training
-    tau=0.005,                    # Default still good
-    gamma=0.999,                  # Keep higher gamma for 10ms period
-    train_freq=(1, "episode"),    # Train once per episode
-    gradient_steps=200,
-    ent_coef='auto',              # Auto-tuning still recommended
-    target_update_interval=1,     # Update targets every episode
-    policy_kwargs=dict(
-        net_arch=dict(
-            pi=[512, 512],
-            qf=[512, 512]
-        )
-    ),
-    verbose=1
+        learning_rate=0.0003,
+        buffer_size=500000,
+        learning_starts=100,
+        batch_size=1024,
+        gamma=0.999,
+        train_freq=1,
+        gradient_steps=1,
+        target_update_interval=1000,
+        exploration_fraction=0.1,
+        exploration_initial_eps=1.0,
+        exploration_final_eps=0.05,
+        policy_kwargs=dict(
+            net_arch=[512, 512]
+        ),
+        verbose=1
     )
 
     agent.learn(total_timesteps=1000000, callback=StateQueueCallback(data_queue))

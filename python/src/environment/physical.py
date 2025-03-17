@@ -36,7 +36,8 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
                 np.finfo(np.float32).max,
             ]
         )
-        self.action_space = spaces.Box(-1.0, 1.0, shape=(1,))
+        # Discrete action space: 0=left, 1=no move, 2=right
+        self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(-high, high)
 
         self.np_random, _ = seeding.np_random(None)
@@ -82,10 +83,17 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         return obs, {}
 
     def step(self, action):
-        action = np.clip(action, -1.0, 1.0)[0]
+        # Convert discrete action to continuous force
+        # 0=left, 1=no move, 2=right
+        if action == 0:  # Left
+            force = -1.0
+        elif action == 2:  # Right
+            force = 1.0
+        else:  # No move (action == 1)
+            force = 0.0
 
         pre_action = time.perf_counter()
-        self.client.move(action.item())
+        self.client.move(force)
 
         while (time.perf_counter() - pre_action) < 0.003:
             pass
