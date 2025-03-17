@@ -83,15 +83,18 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)[0]
+
+        pre_action = time.perf_counter()
         self.client.move(action.item())
 
-        while (time.perf_counter() - self.last_time) < 0.01:
+        while (time.perf_counter() - pre_action) < 0.003:
             pass
-        # print(time.perf_counter() - self.last_time)
-        self.last_time = time.perf_counter()
+        
         response = self.client.sense()
         # print(f"Elapsed time: {(time.perf_counter() - self.last_time) * 1000}ms")
         
+        print(time.perf_counter() - self.last_time)
+        self.last_time = time.perf_counter()
 
         if response is None:
             return self.last_step_return
