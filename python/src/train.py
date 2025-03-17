@@ -102,7 +102,7 @@ def train(environment_class, data_queue, signal_queue):
     learning_starts=3,            # Changed to number of episodes (not steps)
     batch_size=1024,               # Increase batch size for episode-based training
     tau=0.005,                    # Default still good
-    gamma=0.999,                  # Keep higher gamma for 10ms period
+    gamma=0.995,                  # Keep higher gamma for 10ms period
     train_freq=(1, "episode"),    # Train once per episode
     gradient_steps=200,
     ent_coef='auto',              # Auto-tuning still recommended
