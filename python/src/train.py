@@ -98,13 +98,13 @@ def train(environment_class, data_queue, signal_queue):
         MlpPolicy,
         env,
         learning_rate=0.0003,         # Return to default as updates are less frequent
-    buffer_size=500000,           # Keep larger buffer
+    buffer_size=100000,           # Keep larger buffer
     learning_starts=3,            # Changed to number of episodes (not steps)
     batch_size=1024,               # Increase batch size for episode-based training
     tau=0.005,                    # Default still good
     gamma=0.995,                  # Keep higher gamma for 10ms period
     train_freq=(1, "episode"),    # Train once per episode
-    gradient_steps=200,
+    gradient_steps=10,
     ent_coef='auto',              # Auto-tuning still recommended
     target_update_interval=1,     # Update targets every episode
     policy_kwargs=dict(
