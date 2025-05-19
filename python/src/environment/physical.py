@@ -24,7 +24,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
 
         self.t = 0  # timestep
         self.last_time = time.perf_counter()
-        self.t_limit = 10000
+        self.t_limit = 5000
 
         # Observation and action spaces
         high = np.array(
@@ -40,7 +40,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         self.observation_space = spaces.Box(-high, high)
 
         self.np_random, _ = seeding.np_random(None)
-        self.state = (0, 0, math.pi, 0)
+        self.state = None
 
     def convert_observation(self, response: dict) -> np.ndarray:
         extent = response["extent"] if response["extent"] > 0 else 1000
@@ -59,7 +59,6 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
     ) -> Tuple[np.ndarray, dict]:
         self.state = np.array([0, 0, np.pi, 0], dtype=np.float32)
         self.t = 0
-        self.last_time = time.perf_counter()
 
         self.client.reset()
 
@@ -77,6 +76,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
 
         time.sleep(2)
 
+        self.last_time = time.perf_counter()
         obs = self.convert_observation(self.client.sense())
 
         return obs, {}
@@ -87,12 +87,12 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         pre_action = time.perf_counter()
         self.client.move(action.item())
 
-        while (time.perf_counter() - pre_action) < 0.005:
+        while (time.perf_counter() - pre_action) < 0.05:
             pass
-        
+
         response = self.client.sense()
         # print(f"Elapsed time: {(time.perf_counter() - self.last_time) * 1000}ms")
-        
+
         # print(time.perf_counter() - self.last_time)
         self.last_time = time.perf_counter()
 
@@ -114,11 +114,11 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
         terminated = (limitL or limitR) or abs(obs[4]) > 16.0
         truncated = bool(self.t >= self.t_limit)
         self.t += 1
-        
+
         # print(self.t, truncated)
 
         pos_reward = 0.5 * (1 + obs[2])
-        vel_reward = 0.1 * (1 - min(1, abs(obs[4])/10))  # Normalized velocity reward
+        vel_reward = 0.1 * (1 - min(1, abs(obs[4]) / 10))  # Normalized velocity reward
         reward = pos_reward + vel_reward
         # Update GUI and episode data
         self.last_step_return = (
@@ -128,7 +128,7 @@ class InvertedPendulumContinuousControlPhysical(gym.Env):
             bool(truncated),
             {},
         )
-        
+
         return obs, float(reward), bool(terminated), bool(truncated), {}
 
     def __del__(self) -> None:

@@ -114,6 +114,8 @@ class InvertedPendulumContinuousControlSim(Env):
         )
 
         reward = 0.5 * (1 + math.cos(theta))
+        vel_reward = 0.1 * (1 - min(1, abs(x_dot) / 10))  # Normalized velocity reward
+        reward = reward + vel_reward
 
         # delay by dt
         # time.sleep(self.dt)
