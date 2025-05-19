@@ -4,6 +4,7 @@ import math
 import numpy as np
 import logging
 import pygame
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ class InvertedPendulumContinuousControlSim(Env):
     }
 
     def __init__(self, render_mode="human"):
-        self.g = 9.82  # gravity
+        self.g = 9.81  # gravity
         self.m_c = 0.5  # cart mass
         self.m_p = 0.2  # pendulum mass
         self.total_m = self.m_p + self.m_c
@@ -113,6 +114,9 @@ class InvertedPendulumContinuousControlSim(Env):
         )
 
         reward = 0.5 * (1 + math.cos(theta))
+
+        # delay by dt
+        # time.sleep(self.dt)
 
         obs = np.array(
             [x, x_dot, np.cos(theta), np.sin(theta), theta_dot], dtype=np.float32
