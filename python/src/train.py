@@ -11,6 +11,7 @@ from gui import PendulumVisualizerDPG
 
 from stable_baselines3.sac.policies import MlpPolicy
 from stable_baselines3 import SAC
+from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.callbacks import BaseCallback
 
 
@@ -102,12 +103,16 @@ def train(environment_class, data_queue, signal_queue):
         learning_starts=3,  # Changed to number of episodes (not steps)
         batch_size=1024,  # Increase batch size for episode-based training
         tau=0.005,  # Default still good
-        gamma=0.9999,  # Keep higher gamma for 10ms period
+        gamma=0.995,  # Keep higher gamma for 10ms period
         train_freq=(1, "episode"),  # Train once per episode
         gradient_steps=10,
         ent_coef="auto",  # Auto-tuning still recommended
         target_update_interval=1,  # Update targets every episode
         policy_kwargs=dict(net_arch=dict(pi=[512, 512], qf=[512, 512])),
+        action_noise=NormalActionNoise(
+            mean=np.zeros(env.action_space.shape[0]),
+            sigma=0.1 * np.ones(env.action_space.shape[0]),
+        ),
         verbose=1,
     )
 
