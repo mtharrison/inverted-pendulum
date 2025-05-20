@@ -99,7 +99,7 @@ def train(environment_class, data_queue, signal_queue):
         MlpPolicy,
         env,
         learning_rate=0.0003,  # Return to default as updates are less frequent
-        buffer_size=100000,  # Keep larger buffer
+        buffer_size=1000000,  # Keep larger buffer
         learning_starts=3,  # Changed to number of episodes (not steps)
         batch_size=1024,  # Increase batch size for episode-based training
         tau=0.005,  # Default still good
@@ -111,7 +111,7 @@ def train(environment_class, data_queue, signal_queue):
         policy_kwargs=dict(net_arch=dict(pi=[512, 512], qf=[512, 512])),
         action_noise=NormalActionNoise(
             mean=np.zeros(env.action_space.shape[0]),
-            sigma=0.1 * np.ones(env.action_space.shape[0]),
+            sigma=0.2 * np.ones(env.action_space.shape[0]),
         ),
         verbose=1,
     )

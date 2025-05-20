@@ -26,6 +26,12 @@ class InvertedPendulumContinuousControlSim(Env):
         self.dt = 0.05  # seconds between state updates
         self.b = 1.0  # friction coefficient
 
+        # Measurement noise parameters
+        self.position_noise_std = 0.05
+        self.velocity_noise_std = 0.05
+        self.angle_noise_std = 0.05
+        self.angular_velocity_noise_std = 0.05
+
         self.t = 0  # timestep
         self.t_limit = 5000
 
@@ -120,8 +126,23 @@ class InvertedPendulumContinuousControlSim(Env):
         # delay by dt
         # time.sleep(self.dt)
 
+        # Add measurement noise to observations
+        noisy_x = x + self.np_random.normal(0, self.position_noise_std)
+        noisy_x_dot = x_dot + self.np_random.normal(0, self.velocity_noise_std)
+        noisy_theta = theta + self.np_random.normal(0, self.angle_noise_std)
+        noisy_theta_dot = theta_dot + self.np_random.normal(
+            0, self.angular_velocity_noise_std
+        )
+
         obs = np.array(
-            [x, x_dot, np.cos(theta), np.sin(theta), theta_dot], dtype=np.float32
+            [
+                noisy_x,
+                noisy_x_dot,
+                np.cos(noisy_theta),
+                np.sin(noisy_theta),
+                noisy_theta_dot,
+            ],
+            dtype=np.float32,
         )
 
         return obs, reward, terminated, truncated, {}
@@ -151,8 +172,24 @@ class InvertedPendulumContinuousControlSim(Env):
         self.state = np.array([0, 0, np.pi, 0])
         self.t = 0
         x, x_dot, theta, theta_dot = self.state
+
+        # Add measurement noise to observations
+        noisy_x = x + self.np_random.normal(0, self.position_noise_std)
+        noisy_x_dot = x_dot + self.np_random.normal(0, self.velocity_noise_std)
+        noisy_theta = theta + self.np_random.normal(0, self.angle_noise_std)
+        noisy_theta_dot = theta_dot + self.np_random.normal(
+            0, self.angular_velocity_noise_std
+        )
+
         obs = np.array(
-            [x, x_dot, np.cos(theta), np.sin(theta), theta_dot], dtype=np.float32
+            [
+                noisy_x,
+                noisy_x_dot,
+                np.cos(noisy_theta),
+                np.sin(noisy_theta),
+                noisy_theta_dot,
+            ],
+            dtype=np.float32,
         )
         return obs, {}
 
