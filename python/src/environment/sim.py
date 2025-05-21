@@ -18,9 +18,9 @@ class InvertedPendulumContinuousControlSim(Env):
     def __init__(self, render_mode="human"):
         self.g = 9.81  # gravity
         self.m_c = 0.5  # cart mass
-        self.m_p = 0.2  # pendulum mass
+        self.m_p = 0.05  # pendulum mass
         self.total_m = self.m_p + self.m_c
-        self.l = 0.40  # pole's length
+        self.l = 0.49  # pole's length
         self.m_p_l = self.m_p * self.l
         self.force_mag = 10.0
         self.dt = 0.05  # seconds between state updates
@@ -169,14 +169,14 @@ class InvertedPendulumContinuousControlSim(Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        
+
         # Random angle offset from pi (upright position)
         # Random angle between -pi/4 and pi/4 added to pi
-        random_angle = np.pi + self.np_random.uniform(-np.pi/4, np.pi/4)
-        
+        random_angle = np.pi + self.np_random.uniform(-np.pi / 4, np.pi / 4)
+
         # Random angular velocity for initial swing
         random_angular_vel = self.np_random.uniform(-1.0, 1.0)
-        
+
         # Cart starts in center (x=0) with zero velocity
         self.state = np.array([0, 0, random_angle, random_angular_vel])
         self.t = 0
