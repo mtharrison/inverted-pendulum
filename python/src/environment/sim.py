@@ -37,7 +37,7 @@ class InvertedPendulumContinuousControlSim(Env):
 
         # Thresholds
         self.theta_threshold_radians = 12 * 2 * math.pi / 360
-        self.x_threshold = 1.0
+        self.x_threshold = 0.4
 
         # Observation and action spaces
         high = np.array(
