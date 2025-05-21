@@ -169,7 +169,16 @@ class InvertedPendulumContinuousControlSim(Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.state = np.array([0, 0, np.pi, 0])
+        
+        # Random angle offset from pi (upright position)
+        # Random angle between -pi/4 and pi/4 added to pi
+        random_angle = np.pi + self.np_random.uniform(-np.pi/4, np.pi/4)
+        
+        # Random angular velocity for initial swing
+        random_angular_vel = self.np_random.uniform(-1.0, 1.0)
+        
+        # Cart starts in center (x=0) with zero velocity
+        self.state = np.array([0, 0, random_angle, random_angular_vel])
         self.t = 0
         x, x_dot, theta, theta_dot = self.state
 

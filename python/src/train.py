@@ -20,9 +20,10 @@ class StateQueueCallback(BaseCallback):
     Custom callback that saves each environment state to a queue after every step.
     """
 
-    def __init__(self, state_queue, verbose=0):
+    def __init__(self, agent, state_queue, verbose=0):
         super(StateQueueCallback, self).__init__(verbose)
         self.state_queue = state_queue
+        self.agent = agent
 
         self.episode = 0
         self.step = 0
@@ -89,6 +90,10 @@ class StateQueueCallback(BaseCallback):
                 }
             )
 
+            if avg_score > 2200:
+                print("Saving model...")
+                self.agent.save("best_model")
+
         return True
 
 
@@ -116,7 +121,14 @@ def train(environment_class, data_queue, signal_queue):
         verbose=1,
     )
 
-    agent.learn(total_timesteps=1000000, callback=StateQueueCallback(data_queue))
+    # Load the model if it exists
+    if os.path.exists("best_model.zip"):
+        print("Loading model...")
+        agent = SAC.load("best_model", env=env)
+    else:
+        print("No model found, starting training from scratch.")
+
+    agent.learn(total_timesteps=1000000, callback=StateQueueCallback(agent, data_queue))
 
 
 def main():
