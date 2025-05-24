@@ -18,7 +18,7 @@ class InvertedPendulumContinuousControlSim(Env):
     def __init__(self, render_mode="human"):
         self.g = 9.81  # gravity
         self.m_c = 0.5  # cart mass
-        self.m_p = 0.05  # pendulum mass
+        self.m_p = 0.2  # pendulum mass
         self.total_m = self.m_p + self.m_c
         self.l = 0.49  # pole's length
         self.m_p_l = self.m_p * self.l

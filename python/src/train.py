@@ -90,7 +90,7 @@ class StateQueueCallback(BaseCallback):
                 }
             )
 
-            if avg_score > 2200:
+            if avg_score > 2000:
                 print("Saving model...")
                 self.agent.save("best_model")
 
@@ -103,7 +103,7 @@ def train(environment_class, data_queue, signal_queue):
     agent = SAC(
         MlpPolicy,
         env,
-        learning_rate=0.0003,  # Return to default as updates are less frequent
+        learning_rate=0.0005,  # Return to default as updates are less frequent
         buffer_size=1000000,  # Keep larger buffer
         learning_starts=3,  # Changed to number of episodes (not steps)
         batch_size=1024,  # Increase batch size for episode-based training
